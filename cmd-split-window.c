@@ -58,7 +58,7 @@ cmd_split_window_exec(struct cmd *self, struct cmd_q *cmdq)
 	struct window_pane	*wp = cmdq->state.tflag.wp, *new_wp = NULL;
 	struct environ		*env;
 	const char		*cmd, *path, *shell, *template, *cwd, *to_free;
-	char		       **argv, *cause, *new_cause, *cp;
+	char		       **argv, *cause, *new_cause, *cp, *shellcmd = NULL;
 	u_int			 hlimit;
 	int			 argc, size, percentage;
 	enum layout_type	 type;
@@ -84,7 +84,15 @@ cmd_split_window_exec(struct cmd *self, struct cmd_q *cmdq)
 		}
 	} else {
 		argc = args->argc;
-		argv = args->argv;
+		if (1 == argc) {
+			ft = format_create(cmdq, 0);
+			format_defaults(ft, cmdq->state.c, s, wl, wp);
+			shellcmd = format_expand(ft, args->argv[0]);
+			format_free(ft);
+			argv = &shellcmd;
+		} else {
+			argv = args->argv;
+		}
 	}
 
 	to_free = NULL;
@@ -178,6 +186,9 @@ cmd_split_window_exec(struct cmd *self, struct cmd_q *cmdq)
 
 	if (to_free != NULL)
 		free((void *)to_free);
+	if (shellcmd) {
+		free(shellcmd);
+	}
 	return (CMD_RETURN_NORMAL);
 
 error:
@@ -191,5 +202,8 @@ error:
 
 	if (to_free != NULL)
 		free((void *)to_free);
+	if (shellcmd) {
+		free(shellcmd);
+	}
 	return (CMD_RETURN_ERROR);
 }
