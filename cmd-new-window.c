@@ -57,7 +57,7 @@ cmd_new_window_exec(struct cmd *self, struct cmd_q *cmdq)
 	struct client		*c = cmdq->state.c;
 	int			 idx = cmdq->state.tflag.idx;
 	const char		*cmd, *path, *template, *cwd, *to_free;
-	char		       **argv, *cause, *cp;
+	char		       **argv, *cause, *cp, *shellcmd = NULL;
 	int			 argc, detached;
 	struct format_tree	*ft;
 	struct environ_entry	*envent;
@@ -81,7 +81,15 @@ cmd_new_window_exec(struct cmd *self, struct cmd_q *cmdq)
 		}
 	} else {
 		argc = args->argc;
-		argv = args->argv;
+		if (1 == argc) {
+			ft = format_create(cmdq, 0);
+			format_defaults(ft, c, s, wl, cmdq->state.tflag.wp);
+			shellcmd = format_expand(ft, args->argv[0]);
+			format_free(ft);
+			argv = &shellcmd;
+		} else {
+			argv = args->argv;
+		}
 	}
 
 	path = NULL;
@@ -154,10 +162,16 @@ cmd_new_window_exec(struct cmd *self, struct cmd_q *cmdq)
 
 	if (to_free != NULL)
 		free((void *)to_free);
+	if (shellcmd) {
+		free(shellcmd);
+	}
 	return (CMD_RETURN_NORMAL);
 
 error:
 	if (to_free != NULL)
 		free((void *)to_free);
+	if (shellcmd) {
+		free(shellcmd);
+	}
 	return (CMD_RETURN_ERROR);
 }
