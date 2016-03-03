@@ -1,7 +1,7 @@
 /* $OpenBSD$ */
 
 /*
- * Copyright (c) 2007 Nicholas Marriott <nicm@users.sourceforge.net>
+ * Copyright (c) 2007 Nicholas Marriott <nicholas.marriott@gmail.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -31,10 +31,6 @@
 #include <unistd.h>
 
 #include "tmux.h"
-
-#if defined(DEBUG) && defined(__OpenBSD__)
-extern char	*malloc_options;
-#endif
 
 struct options	*global_options;	/* server options */
 struct options	*global_s_options;	/* session options */
@@ -194,11 +190,9 @@ main(int argc, char **argv)
 	const char	*s;
 	int		 opt, flags, keys;
 
-#if defined(DEBUG) && defined(__OpenBSD__)
-	malloc_options = (char *) "AFGJPX";
-#endif
-
+	setlocale(LC_CTYPE, "en_US.UTF-8");
 	setlocale(LC_TIME, "");
+
 	tzset();
 
 	if (**argv == '-')
