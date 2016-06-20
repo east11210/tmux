@@ -190,7 +190,7 @@ typedef uint64_t u_int64_t;
 
 #ifndef HAVE_CLOSEFROM
 /* closefrom.c */
-void	closefrom(int);
+void		 closefrom(int);
 #endif
 
 #ifndef HAVE_STRCASESTR
@@ -221,6 +221,16 @@ size_t	 	 strlcat(char *, const char *, size_t);
 #ifndef HAVE_DAEMON
 /* daemon.c */
 int	 	 daemon(int, int);
+#endif
+
+#ifndef HAVE_GETPROGNAME
+/* getprogname.c */
+const char	*getprogname(void);
+#endif
+
+#ifndef HAVE_SETPROCTITLE
+/* setproctitle.c */
+void		 setproctitle(const char *, ...);
 #endif
 
 #ifndef HAVE_B64_NTOP
