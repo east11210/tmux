@@ -185,7 +185,12 @@ dist_tmux_SOURCES = \
 	xterm-keys.c
 nodist_tmux_SOURCES = osdep-@PLATFORM@.c
 
-# Pile in all the compat/ stuff that is needed.
+# Add compat file for utf8proc.
+if HAVE_UTF8PROC
+nodist_tmux_SOURCES += compat/utf8proc.c
+endif
+
+# Add compat for missing or broken functions.
 if NO_FORKPTY
 nodist_tmux_SOURCES += compat/forkpty-@PLATFORM@.c
 endif
@@ -194,9 +199,6 @@ nodist_tmux_SOURCES += compat/imsg.c compat/imsg-buffer.c
 endif
 if NO_CLOSEFROM
 nodist_tmux_SOURCES += compat/closefrom.c
-endif
-if NO_DAEMON
-nodist_tmux_SOURCES += compat/daemon.c
 endif
 if NO_DAEMON
 nodist_tmux_SOURCES += compat/daemon.c
