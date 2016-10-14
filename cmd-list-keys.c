@@ -135,11 +135,10 @@ static enum cmd_retval
 cmd_list_keys_table(struct cmd *self, struct cmd_q *cmdq)
 {
 	struct args			*args = self->args;
-	const char			*tablename;
+	const char			*tablename, *cmdstr;
 	const struct mode_key_table	*mtab;
 	struct mode_key_binding		*mbind;
-	const char			*key, *cmdstr, *mode;
-	int			 	 width, keywidth, any_mode;
+	int			 	 width, keywidth;
 
 	tablename = args_get(args, 't');
 	if ((mtab = mode_key_findtable(tablename)) == NULL) {
@@ -147,33 +146,19 @@ cmd_list_keys_table(struct cmd *self, struct cmd_q *cmdq)
 		return (CMD_RETURN_ERROR);
 	}
 
-	width = 0;
-	any_mode = 0;
+	keywidth = 0;
 	RB_FOREACH(mbind, mode_key_tree, mtab->tree) {
-		key = key_string_lookup_key(mbind->key);
-
-		if (mbind->mode != 0)
-			any_mode = 1;
-
-		keywidth = strlen(key);
-		if (keywidth > width)
-			width = keywidth;
+		width = strlen(key_string_lookup_key(mbind->key));
+		if (width > keywidth)
+			keywidth = width;
 	}
 
 	RB_FOREACH(mbind, mode_key_tree, mtab->tree) {
-		key = key_string_lookup_key(mbind->key);
-
-		mode = "";
-		if (mbind->mode != 0)
-			mode = "c";
 		cmdstr = mode_key_tostring(mtab->cmdstr, mbind->cmd);
 		if (cmdstr != NULL) {
-			cmdq_print(cmdq, "bind-key -%st %s%s %*s %s%s%s%s",
-			    mode, any_mode && *mode == '\0' ? " " : "",
-			    mtab->name, (int) width, key, cmdstr,
-			    mbind->arg != NULL ? " \"" : "",
-			    mbind->arg != NULL ? mbind->arg : "",
-			    mbind->arg != NULL ? "\"": "");
+			cmdq_print(cmdq, "bind-key -t %s %*s %s",
+			    mtab->name, (int)keywidth,
+			    key_string_lookup_key(mbind->key), cmdstr);
 		}
 	}
 

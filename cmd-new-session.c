@@ -33,7 +33,7 @@
 
 #define NEW_SESSION_TEMPLATE "#{session_name}:"
 
-enum cmd_retval	 cmd_new_session_exec(struct cmd *, struct cmd_q *);
+static enum cmd_retval	 cmd_new_session_exec(struct cmd *, struct cmd_q *);
 
 const struct cmd_entry cmd_new_session_entry = {
 	.name = "new-session",
@@ -63,7 +63,7 @@ const struct cmd_entry cmd_has_session_entry = {
 	.exec = cmd_new_session_exec
 };
 
-enum cmd_retval
+static enum cmd_retval
 cmd_new_session_exec(struct cmd *self, struct cmd_q *cmdq)
 {
 	struct args		*args = self->args;
@@ -80,6 +80,7 @@ cmd_new_session_exec(struct cmd *self, struct cmd_q *cmdq)
 	u_int			 sx, sy;
 	struct format_tree	*ft;
 	struct environ_entry	*envent;
+	struct cmd_find_state	 fs;
 
 	if (self->entry == &cmd_has_session_entry) {
 		/*
@@ -315,6 +316,10 @@ cmd_new_session_exec(struct cmd *self, struct cmd_q *cmdq)
 
 	if (to_free != NULL)
 		free((void *)to_free);
+
+	cmd_find_from_session(&fs, s);
+	if (hooks_wait(s->hooks, cmdq, &fs, "after-new-session") == 0)
+		return (CMD_RETURN_WAIT);
 	return (CMD_RETURN_NORMAL);
 
 error:

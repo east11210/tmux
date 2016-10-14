@@ -26,9 +26,9 @@
  * Sources a configuration file.
  */
 
-enum cmd_retval	cmd_source_file_exec(struct cmd *, struct cmd_q *);
+static enum cmd_retval	cmd_source_file_exec(struct cmd *, struct cmd_q *);
 
-void		cmd_source_file_done(struct cmd_q *);
+static void		cmd_source_file_done(struct cmd_q *);
 
 const struct cmd_entry cmd_source_file_entry = {
 	.name = "source-file",
@@ -41,7 +41,7 @@ const struct cmd_entry cmd_source_file_entry = {
 	.exec = cmd_source_file_exec
 };
 
-enum cmd_retval
+static enum cmd_retval
 cmd_source_file_exec(struct cmd *self, struct cmd_q *cmdq)
 {
 	struct args	*args = self->args;
@@ -49,7 +49,6 @@ cmd_source_file_exec(struct cmd *self, struct cmd_q *cmdq)
 	int		 quiet;
 
 	cmdq1 = cmdq_new(cmdq->client);
-	cmdq1->flags |= cmdq->flags & CMD_Q_NOHOOKS;
 	cmdq1->emptyfn = cmd_source_file_done;
 	cmdq1->data = cmdq;
 
@@ -76,7 +75,7 @@ cmd_source_file_exec(struct cmd *self, struct cmd_q *cmdq)
 	return (CMD_RETURN_WAIT);
 }
 
-void
+static void
 cmd_source_file_done(struct cmd_q *cmdq1)
 {
 	struct cmd_q	*cmdq = cmdq1->data;
