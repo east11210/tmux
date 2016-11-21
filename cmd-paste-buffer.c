@@ -27,7 +27,7 @@
  * Paste paste buffer if present.
  */
 
-static enum cmd_retval	 cmd_paste_buffer_exec(struct cmd *, struct cmd_q *);
+static enum cmd_retval	cmd_paste_buffer_exec(struct cmd *, struct cmdq_item *);
 
 const struct cmd_entry cmd_paste_buffer_entry = {
 	.name = "paste-buffer",
@@ -39,15 +39,15 @@ const struct cmd_entry cmd_paste_buffer_entry = {
 
 	.tflag = CMD_PANE,
 
-	.flags = 0,
+	.flags = CMD_AFTERHOOK,
 	.exec = cmd_paste_buffer_exec
 };
 
 static enum cmd_retval
-cmd_paste_buffer_exec(struct cmd *self, struct cmd_q *cmdq)
+cmd_paste_buffer_exec(struct cmd *self, struct cmdq_item *item)
 {
 	struct args		*args = self->args;
-	struct window_pane	*wp = cmdq->state.tflag.wp;
+	struct window_pane	*wp = item->state.tflag.wp;
 	struct paste_buffer	*pb;
 	const char		*sepstr, *bufname, *bufdata, *bufend, *line;
 	size_t			 seplen, bufsize;
@@ -62,7 +62,7 @@ cmd_paste_buffer_exec(struct cmd *self, struct cmd_q *cmdq)
 	else {
 		pb = paste_get_name(bufname);
 		if (pb == NULL) {
-			cmdq_error(cmdq, "no buffer %s", bufname);
+			cmdq_error(item, "no buffer %s", bufname);
 			return (CMD_RETURN_ERROR);
 		}
 	}

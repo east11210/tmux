@@ -12,6 +12,13 @@ AC_CANONICAL_HOST
 # empty default.
 : ${CFLAGS=""}
 
+# Save user CPPFLAGS, CFLAGS and LDFLAGS. We need to change them because
+# AC_CHECK_HEADER doesn't give us any other way to update the include
+# paths. But for Makefile.am we want to use AM_CPPFLAGS and friends.
+SAVED_CFLAGS="$CFLAGS"
+SAVED_CPPFLAGS="$CPPFLAGS"
+SAVED_LDFLAGS="$LDFLAGS"
+
 # Set up the compiler in two different ways and say yes we may want to install.
 AC_PROG_CC
 AM_PROG_CC_C_O
@@ -24,39 +31,36 @@ PKG_PROG_PKG_CONFIG
 test "$sysconfdir" = '${prefix}/etc' && sysconfdir=/etc
 
 # Is this --enable-debug?
-found_debug=yes
+enable_debug=yes
 AC_ARG_ENABLE(
 	debug,
 	AC_HELP_STRING(--enable-debug, enable debug build flags),
-	found_debug=$enable_debug
 )
-AM_CONDITIONAL(IS_DEBUG, test "x$found_debug" = xyes)
+AM_CONDITIONAL(IS_DEBUG, test "x$enable_debug" = xyes)
 
 # Is this --enable-coverage?
 AC_ARG_ENABLE(
 	coverage,
-	AC_HELP_STRING(--enable-coverage, enable coverage build flags),
-	found_coverage=$enable_coverage
+	AC_HELP_STRING(--enable-coverage, enable coverage build flags)
 )
-AM_CONDITIONAL(IS_COVERAGE, test "x$found_coverage" = xyes)
+AM_CONDITIONAL(IS_COVERAGE, test "x$enable_coverage" = xyes)
 
 # Is this --enable-profile?
 AC_ARG_ENABLE(
 	profile,
-	AC_HELP_STRING(--enable-profile, enable profile build flags),
-	found_profile=$enable_profile
+	AC_HELP_STRING(--enable-profile, enable profile build flags)
 )
-AM_CONDITIONAL(IS_PROFILE, test "x$found_profile" = xyes)
+AM_CONDITIONAL(IS_PROFILE, test "x$enable_profile" = xyes)
 
 # Is this a static build?
 AC_ARG_ENABLE(
 	static,
-	AC_HELP_STRING(--enable-static, create a static build),
-	found_static=$enable_static
+	AC_HELP_STRING(--enable-static, create a static build)
 )
-if test "x$found_static" = xyes; then
-	LDFLAGS="$LDFLAGS -static"
+if test "x$enable_static" = xyes; then
 	test "x$PKG_CONFIG" != x && PKG_CONFIG="$PKG_CONFIG --static"
+	AM_LDFLAGS="-static $AM_LDFLAGS"
+	LDFLAGS="$AM_LDFLAGS $SAVED_LDFLAGS"
 fi
 
 # Is this gcc?
@@ -133,7 +137,8 @@ PKG_CHECK_MODULES(
 	LIBEVENT,
 	libevent,
 	[
-		CPPFLAGS="$LIBEVENT_CFLAGS $CPPFLAGS"
+		AM_CFLAGS="$LIBEVENT_CFLAGS $AM_CFLAGS"
+		CFLAGS="$AM_CFLAGS $SAVED_CFLAGS"
 		LIBS="$LIBEVENT_LIBS $LIBS"
 		found_libevent=yes
 	],
@@ -160,7 +165,8 @@ PKG_CHECK_MODULES(
 	LIBNCURSES,
 	ncurses,
 	[
-		CPPFLAGS="$LIBNCURSES_CFLAGS $CPPFLAGS"
+		AM_CFLAGS="$LIBNCURSES_CFLAGS $AM_CFLAGS"
+		CFLAGS="$AM_CFLAGS $SAVED_CFLAGS"
 		LIBS="$LIBNCURSES_LIBS $LIBS"
 		found_ncurses=yes
 	],
@@ -205,20 +211,18 @@ fi
 # Look for utempter.
 AC_ARG_ENABLE(
 	utempter,
-	AC_HELP_STRING(--enable-utempter, use utempter if it is installed),
-	found_utempter=$enable_utempter,
-	found_utempter=yes
+	AC_HELP_STRING(--enable-utempter, use utempter if it is installed)
 )
-if test "x$found_utempter" = xyes; then
-	AC_CHECK_HEADER(utempter.h, found_utempter=yes, found_utempter=no)
-	if test "x$found_utempter" = xyes; then
+if test "x$enable_utempter" = xyes; then
+	AC_CHECK_HEADER(utempter.h, enable_utempter=yes, enable_utempter=no)
+	if test "x$enable_utempter" = xyes; then
 		AC_SEARCH_LIBS(
 			utempter_add_record,
 			utempter,
-			found_utempter=yes,
-			found_utempter=no
+			enable_utempter=yes,
+			enable_utempter=no
 		)
-		if test "x$found_utempter" = xyes; then
+		if test "x$enable_utempter" = xyes; then
 			AC_DEFINE(HAVE_UTEMPTER)
 		fi
 	fi
@@ -227,25 +231,23 @@ fi
 # Look for utf8proc.
 AC_ARG_ENABLE(
 	utf8proc,
-	AC_HELP_STRING(--enable-utf8proc, use utf8proc if it is installed),
-	found_utf8proc=$enable_utf8proc,
-	found_utf8proc=no
+	AC_HELP_STRING(--enable-utf8proc, use utf8proc if it is installed)
 )
-if test "x$found_utf8proc" = xyes; then
-	AC_CHECK_HEADER(utf8proc.h, found_utf8proc=yes, found_utf8proc=no)
-	if test "x$found_utf8proc" = xyes; then
+if test "x$enable_utf8proc" = xyes; then
+	AC_CHECK_HEADER(utf8proc.h, enable_utf8proc=yes, enable_utf8proc=no)
+	if test "x$enable_utf8proc" = xyes; then
 		AC_SEARCH_LIBS(
 			utf8proc_charwidth,
 			utf8proc,
-			found_utf8proc=yes,
-			found_utf8proc=no
+			enable_utf8proc=yes,
+			enable_utf8proc=no
 		)
-		if test "x$found_utf8proc" = xyes; then
+		if test "x$enable_utf8proc" = xyes; then
 			AC_DEFINE(HAVE_UTF8PROC)
 		fi
 	fi
 fi
-AM_CONDITIONAL(HAVE_UTF8PROC, [test "x$found_utf8proc" = xyes])
+AM_CONDITIONAL(HAVE_UTF8PROC, [test "x$enable_utf8proc" = xyes])
 
 # Check for b64_ntop.
 AC_MSG_CHECKING(for b64_ntop)
@@ -652,6 +654,15 @@ AM_CONDITIONAL(IS_OPENBSD, test "x$PLATFORM" = xopenbsd)
 AM_CONDITIONAL(IS_SUNOS, test "x$PLATFORM" = xsunos)
 AM_CONDITIONAL(IS_HPUX, test "x$PLATFORM" = xhpux)
 AM_CONDITIONAL(IS_UNKNOWN, test "x$PLATFORM" = xunknown)
+
+# Save our CFLAGS/CPPFLAGS/LDFLAGS for the Makefile and restore the old user
+# variables.
+AC_SUBST(AM_CPPFLAGS)
+CPPFLAGS="$SAVED_CPPFLAGS"
+AC_SUBST(AM_CFLAGS)
+CFLAGS="$SAVED_CFLAGS"
+AC_SUBST(AM_LDFLAGS)
+LDFLAGS="$SAVED_LDFLAGS"
 
 # autoconf should create a Makefile.
 AC_OUTPUT(Makefile)

@@ -192,6 +192,15 @@ static int
 server_loop(void)
 {
 	struct client	*c;
+	u_int		 items;
+
+	do {
+		items = cmdq_next(NULL);
+		TAILQ_FOREACH(c, &clients, entry) {
+			if (c->flags & CLIENT_IDENTIFIED)
+				items += cmdq_next(c);
+		}
+	} while (items != 0);
 
 	server_client_loop();
 

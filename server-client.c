@@ -124,8 +124,7 @@ server_client_create(int fd)
 	c->fd = -1;
 	c->cwd = NULL;
 
-	c->cmdq = cmdq_new(c);
-	c->cmdq->client_exit = 1;
+	TAILQ_INIT(&c->queue);
 
 	c->stdin_data = evbuffer_new();
 	c->stdout_data = evbuffer_new();
@@ -242,10 +241,6 @@ server_client_lost(struct client *c)
 	free(c->prompt_string);
 	free(c->prompt_buffer);
 
-	c->cmdq->flags |= CMD_Q_DEAD;
-	cmdq_free(c->cmdq);
-	c->cmdq = NULL;
-
 	environ_free(c->environ);
 
 	proc_remove_peer(c->peer);
@@ -279,6 +274,9 @@ server_client_free(__unused int fd, __unused short events, void *arg)
 
 	log_debug("free client %p (%d references)", c, c->references);
 
+	if (!TAILQ_EMPTY(&c->queue))
+		fatalx("queue not empty");
+
 	if (c->references == 0)
 		free(c);
 }
@@ -292,7 +290,7 @@ server_client_detach(struct client *c, enum msgtype msgtype)
 	if (s == NULL)
 		return;
 
-	hooks_run(c->session->hooks, c, NULL, "client-detached");
+	notify_client("client-detached", c);
 	proc_send_s(c->peer, msgtype, s->name);
 }
 
@@ -328,7 +326,7 @@ server_client_check_mouse(struct client *c)
 		type = WHEEL;
 		x = m->x, y = m->y, b = m->b;
 		log_debug("wheel at %u,%u", x, y);
-	} else if (MOUSE_BUTTONS(m->b) == 3) {
+	} else if (MOUSE_RELEASE(m->b)) {
 		type = UP;
 		x = m->x, y = m->y, b = m->lb;
 		log_debug("up at %u,%u", x, y);
@@ -423,7 +421,7 @@ have_event:
 		m->wp = -1;
 
 	/* Stop dragging if needed. */
-	if (type != DRAG && c->tty.mouse_drag_flag) {
+	if (type != DRAG && type != WHEEL && c->tty.mouse_drag_flag) {
 		if (c->tty.mouse_drag_release != NULL)
 			c->tty.mouse_drag_release(c, m);
 
@@ -853,6 +851,7 @@ server_client_loop(void)
 	struct client		*c;
 	struct window		*w;
 	struct window_pane	*wp;
+	int			 focus;
 
 	TAILQ_FOREACH(c, &clients, entry) {
 		server_client_check_exit(c);
@@ -866,11 +865,13 @@ server_client_loop(void)
 	 * Any windows will have been redrawn as part of clients, so clear
 	 * their flags now. Also check pane focus and resize.
 	 */
+	focus = options_get_number(global_options, "focus-events");
 	RB_FOREACH(w, windows, &windows) {
 		w->flags &= ~WINDOW_REDRAW;
 		TAILQ_FOREACH(wp, &w->panes, entry) {
 			if (wp->fd != -1) {
-				server_client_check_focus(wp);
+				if (focus)
+					server_client_check_focus(wp);
 				server_client_check_resize(wp);
 			}
 			wp->flags &= ~PANE_REDRAW;
@@ -947,10 +948,6 @@ server_client_check_focus(struct window_pane *wp)
 	struct client	*c;
 	int		 push;
 
-	/* Are focus events off? */
-	if (!options_get_number(global_options, "focus-events"))
-		return;
-
 	/* Do we need to push the focus state? */
 	push = wp->flags & PANE_FOCUSPUSH;
 	wp->flags &= ~PANE_FOCUSPUSH;
@@ -1014,7 +1011,8 @@ server_client_reset_state(struct client *c)
 	if (c->flags & (CLIENT_CONTROL|CLIENT_SUSPENDED))
 		return;
 
-	tty_region(&c->tty, 0, c->tty.sy - 1);
+	tty_region_off(&c->tty);
+	tty_margin_off(&c->tty);
 
 	status = options_get_number(oo, "status");
 	if (!window_pane_visible(wp) || wp->yoff + s->cy >= c->tty.sy - status)
@@ -1220,7 +1218,7 @@ server_client_dispatch(struct imsg *imsg, void *arg)
 			server_redraw_client(c);
 		}
 		if (c->session != NULL)
-			hooks_run(c->session->hooks, c, NULL, "client-resized");
+			notify_client("client-resized", c);
 		break;
 	case MSG_EXITING:
 		if (datalen != 0)
@@ -1262,6 +1260,29 @@ server_client_dispatch(struct imsg *imsg, void *arg)
 	}
 }
 
+/* Callback when command is done. */
+static enum cmd_retval
+server_client_command_done(struct cmdq_item *item, __unused void *data)
+{
+	struct client	*c = item->client;
+
+	if (~c->flags & CLIENT_ATTACHED)
+		c->flags |= CLIENT_EXIT;
+	return (CMD_RETURN_NORMAL);
+}
+
+/* Show an error message. */
+static enum cmd_retval
+server_client_command_error(struct cmdq_item *item, void *data)
+{
+	char	*error = data;
+
+	cmdq_error(item, "%s", error);
+	free(error);
+
+	return (CMD_RETURN_NORMAL);
+}
+
 /* Handle command message. */
 static void
 server_client_dispatch_command(struct client *c, struct imsg *imsg)
@@ -1284,7 +1305,7 @@ server_client_dispatch_command(struct client *c, struct imsg *imsg)
 
 	argc = data.argc;
 	if (cmd_unpack_argv(buf, len, argc, &argv) != 0) {
-		cmdq_error(c->cmdq, "command too long");
+		cause = xstrdup("command too long");
 		goto error;
 	}
 
@@ -1295,20 +1316,19 @@ server_client_dispatch_command(struct client *c, struct imsg *imsg)
 	}
 
 	if ((cmdlist = cmd_list_parse(argc, argv, NULL, 0, &cause)) == NULL) {
-		cmdq_error(c->cmdq, "%s", cause);
 		cmd_free_argv(argc, argv);
 		goto error;
 	}
 	cmd_free_argv(argc, argv);
 
-	if (c != cfg_client || cfg_finished)
-		cmdq_run(c->cmdq, cmdlist, NULL);
-	else
-		cmdq_append(c->cmdq, cmdlist, NULL);
+	cmdq_append(c, cmdq_get_command(cmdlist, NULL, NULL, 0));
+	cmdq_append(c, cmdq_get_callback(server_client_command_done, NULL));
 	cmd_list_free(cmdlist);
 	return;
 
 error:
+	cmdq_append(c, cmdq_get_callback(server_client_command_error, cause));
+
 	if (cmdlist != NULL)
 		cmd_list_free(cmdlist);
 

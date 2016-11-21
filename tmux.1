@@ -1036,6 +1036,7 @@ The following commands are supported in copy mode:
 .It Li "copy-end-of-line" Ta "D" Ta "C-k"
 .It Li "copy-line" Ta "" Ta ""
 .It Li "copy-pipe <command>" Ta "" Ta ""
+.It Li "copy-pipe-and-cancel <command>" Ta "" Ta ""
 .It Li "copy-selection" Ta "" Ta ""
 .It Li "copy-selection-and-cancel" Ta "Enter" Ta "M-w"
 .It Li "cursor-down" Ta "j" Ta "Down"
@@ -1251,7 +1252,7 @@ By default, it uses the format
 but a different format may be specified with
 .Fl F .
 .It Xo Ic capture-pane
-.Op Fl aepPq
+.Op Fl aepPqCJ
 .Op Fl b Ar buffer-name
 .Op Fl E Ar end-line
 .Op Fl S Ar start-line
@@ -1391,19 +1392,16 @@ can be used and will be replaced with the session name and window index.
 When a window is chosen from the list, the session command is run before the
 window command.
 .Pp
-If
 .Fl S
-is given will display the specified format instead of the default session
-format.
-If
+uses
+.Ar format
+instead of the default session
+format and
 .Fl W
-is given will display the specified format instead of the default window
-format.
-For the meaning of the
-.Fl s
-and
-.Fl w
-options, see the
+instead of the default window format.
+For the meaning of
+.Ar format ,
+see the
 .Sx FORMATS
 section.
 .Pp
@@ -3149,6 +3147,12 @@ see the
 .Ic message-command-style
 option.
 .Pp
+.It Xo Ic wrap-search
+.Op Ic on | off
+.Xc
+If this option is set, searches will wrap around the end of the pane contents.
+The default is on.
+.Pp
 .It Xo Ic xterm-keys
 .Op Ic on | off
 .Xc
@@ -3159,12 +3163,6 @@ will generate
 function key sequences; these have a number included to indicate modifiers such
 as Shift, Alt or Ctrl.
 The default is off.
-.Pp
-.It Xo Ic wrap-search
-.Op Ic on | off
-.Xc
-If this option is set, searches will wrap around the end of the pane contents.
-The default is on.
 .El
 .It Xo Ic show-options
 .Op Fl gqsvw
@@ -3245,12 +3243,26 @@ Run when a client is attached.
 Run when a client is detached
 .It client-resized
 Run when a client is resized.
+.It client-session-changed
+Run when a client's attached session is changed.
 .It pane-died
 Run when the program running in a pane exits, but
 .Ic remain-on-exit
 is on so the pane has not closed.
 .It pane-exited
 Run when the program running in a pane exits.
+.It session-created
+Run when a new session created.
+.It session-closed
+Run when a session closed.
+.It session-renamed
+Run when a session is renamed.
+.It window-linked
+Run when a window is linked into a session.
+.It window-renamed
+Run when a window is renamed.
+.It window-unlinked
+Run when a window is unlinked from a session.
 .El
 .Pp
 Hooks are managed with these commands:
@@ -3459,8 +3471,7 @@ The following variables are available, where appropriate:
 .It Li "client_tty" Ta "" Ta "Pseudo terminal of client"
 .It Li "client_utf8" Ta "" Ta "1 if client supports utf8"
 .It Li "client_width" Ta "" Ta "Width of client"
-.It Li "command_hooked" Ta "" Ta "Name of command hooked, if any"
-.It Li "command_name" Ta "" Ta "Name of command in use, if any"
+.It Li "command" Ta "" Ta "Name of command in use, if any"
 .It Li "command_list_name" Ta "" Ta "Command name if listing commands"
 .It Li "command_list_alias" Ta "" Ta "Command alias if listing commands"
 .It Li "command_list_usage" Ta "" Ta "Command usage if listing commands"
@@ -3470,6 +3481,12 @@ The following variables are available, where appropriate:
 .It Li "history_bytes" Ta "" Ta "Number of bytes in window history"
 .It Li "history_limit" Ta "" Ta "Maximum window history lines"
 .It Li "history_size" Ta "" Ta "Size of history in bytes"
+.It Li "hook" Ta "" Ta "Name of running hook, if any"
+.It Li "hook_pane" Ta "" Ta "ID of pane where hook was run, if any"
+.It Li "hook_session" Ta "" Ta "ID of session where hook was run, if any"
+.It Li "hook_session_name" Ta "" Ta "Name of session where hook was run, if any"
+.It Li "hook_window" Ta "" Ta "ID of window where hook was run, if any"
+.It Li "hook_window_name" Ta "" Ta "Name of window where hook was run, if any"
 .It Li "host" Ta "#H" Ta "Hostname of local host"
 .It Li "host_short" Ta "#h" Ta "Hostname of local host (no domain name)"
 .It Li "insert_flag" Ta "" Ta "Pane insert flag"
@@ -3745,7 +3762,6 @@ if it is present, or
 .Ql \&:
 if not.
 .Pp
-.Pp
 Before the command is executed, the first occurrence of the string
 .Ql %%
 and all occurrences of
@@ -3760,6 +3776,10 @@ Up to nine prompt responses may be replaced
 to
 .Ql %9
 .Pc .
+.Ql %%%
+is like
+.Ql %%
+but any quotation marks are escaped.
 .Pp
 .Fl 1
 makes the prompt only accept one key press, in this case the resulting input

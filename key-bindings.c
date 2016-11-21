@@ -242,23 +242,23 @@ key_bindings_init(void)
 		"bind -Tcopy-mode C-k send -X copy-end-of-line",
 		"bind -Tcopy-mode C-n send -X cursor-down",
 		"bind -Tcopy-mode C-p send -X cursor-up",
-		"bind -Tcopy-mode C-r command-prompt -p'search up' \"send -X search-backward '%%'\"",
-		"bind -Tcopy-mode C-s command-prompt -p'search down' \"send -X search-forward '%%'\"",
+		"bind -Tcopy-mode C-r command-prompt -p'search up' \"send -X search-backward \\\"%%%\\\"\"",
+		"bind -Tcopy-mode C-s command-prompt -p'search down' \"send -X search-forward \\\"%%%\\\"\"",
 		"bind -Tcopy-mode C-v send -X page-down",
 		"bind -Tcopy-mode C-w send -X copy-selection-and-cancel",
 		"bind -Tcopy-mode Escape send -X cancel",
 		"bind -Tcopy-mode Space send -X page-down",
 		"bind -Tcopy-mode , send -X jump-reverse",
 		"bind -Tcopy-mode \\; send -X jump-again",
-		"bind -Tcopy-mode F command-prompt -1p'jump backward' \"send -X jump-backward '%%'\"",
+		"bind -Tcopy-mode F command-prompt -1p'jump backward' \"send -X jump-backward \\\"%%%\\\"\"",
 		"bind -Tcopy-mode N send -X search-reverse",
 		"bind -Tcopy-mode R send -X rectangle-toggle",
-		"bind -Tcopy-mode T command-prompt -1p'jump to backward' \"send -X jump-to-backward '%%'\"",
-		"bind -Tcopy-mode f command-prompt -1p'jump forward' \"send -X jump-forward '%%'\"",
+		"bind -Tcopy-mode T command-prompt -1p'jump to backward' \"send -X jump-to-backward \\\"%%%\\\"\"",
+		"bind -Tcopy-mode f command-prompt -1p'jump forward' \"send -X jump-forward \\\"%%%\\\"\"",
 		"bind -Tcopy-mode g command-prompt -p'goto line' \"send -X goto-line '%%'\"",
 		"bind -Tcopy-mode n send -X search-again",
 		"bind -Tcopy-mode q send -X cancel",
-		"bind -Tcopy-mode t command-prompt -1p'jump to forward' \"send -X jump-to-forward '%%'\"",
+		"bind -Tcopy-mode t command-prompt -1p'jump to forward' \"send -X jump-to-forward \\\"%%%\\\"\"",
 		"bind -Tcopy-mode MouseDrag1Pane send -X begin-selection",
 		"bind -Tcopy-mode MouseDragEnd1Pane send -X copy-selection-and-cancel",
 		"bind -Tcopy-mode WheelUpPane send -N5 -X scroll-up",
@@ -296,7 +296,6 @@ key_bindings_init(void)
 		"bind -Tcopy-mode C-Up send -X scroll-up",
 		"bind -Tcopy-mode C-Down send -X scroll-down",
 
-		"bind -Tcopy-mode-vi C-b send -X page-up",
 		"bind -Tcopy-mode-vi C-c send -X cancel",
 		"bind -Tcopy-mode-vi C-d send -X halfpage-down",
 		"bind -Tcopy-mode-vi C-e send -X scroll-down",
@@ -311,7 +310,7 @@ key_bindings_init(void)
 		"bind -Tcopy-mode-vi Space send -X begin-selection",
 		"bind -Tcopy-mode-vi '$' send -X end-of-line",
 		"bind -Tcopy-mode-vi , send -X jump-reverse",
-		"bind -Tcopy-mode-vi / command-prompt -p'search down' \"send -X search-forward '%%'\"",
+		"bind -Tcopy-mode-vi / command-prompt -p'search down' \"send -X search-forward \\\"%%%\\\"\"",
 		"bind -Tcopy-mode-vi 0 send -X start-of-line",
 		"bind -Tcopy-mode-vi 1 command-prompt -Np'repeat' -I1 \"send -N '%%'\"",
 		"bind -Tcopy-mode-vi 2 command-prompt -Np'repeat' -I2 \"send -N '%%'\"",
@@ -324,12 +323,12 @@ key_bindings_init(void)
 		"bind -Tcopy-mode-vi 9 command-prompt -Np'repeat' -I9 \"send -N '%%'\"",
 		"bind -Tcopy-mode-vi : command-prompt -p'goto line' \"send -X goto-line '%%'\"",
 		"bind -Tcopy-mode-vi \\; send -X jump-again",
-		"bind -Tcopy-mode-vi ? command-prompt -p'search up' \"send -X search-backward '%%'\"",
+		"bind -Tcopy-mode-vi ? command-prompt -p'search up' \"send -X search-backward \\\"%%%\\\"\"",
 		"bind -Tcopy-mode-vi A send -X append-selection-and-cancel",
 		"bind -Tcopy-mode-vi B send -X previous-space",
 		"bind -Tcopy-mode-vi D send -X copy-end-of-line",
 		"bind -Tcopy-mode-vi E send -X next-space-end",
-		"bind -Tcopy-mode-vi F command-prompt -1p'jump backward' \"send -X jump-backward '%%'\"",
+		"bind -Tcopy-mode-vi F command-prompt -1p'jump backward' \"send -X jump-backward \\\"%%%\\\"\"",
 		"bind -Tcopy-mode-vi G send -X history-bottom",
 		"bind -Tcopy-mode-vi H send -X top-line",
 		"bind -Tcopy-mode-vi J send -X scroll-down",
@@ -337,13 +336,13 @@ key_bindings_init(void)
 		"bind -Tcopy-mode-vi L send -X bottom-line",
 		"bind -Tcopy-mode-vi M send -X middle-line",
 		"bind -Tcopy-mode-vi N send -X search-reverse",
-		"bind -Tcopy-mode-vi T command-prompt -1p'jump to backward' \"send -X jump-to-backward '%%'\"",
+		"bind -Tcopy-mode-vi T command-prompt -1p'jump to backward' \"send -X jump-to-backward \\\"%%%\\\"\"",
 		"bind -Tcopy-mode-vi V send -X select-line",
 		"bind -Tcopy-mode-vi W send -X next-space",
 		"bind -Tcopy-mode-vi ^ send -X back-to-indentation",
 		"bind -Tcopy-mode-vi b send -X previous-word",
 		"bind -Tcopy-mode-vi e send -X next-word-end",
-		"bind -Tcopy-mode-vi f command-prompt -1p'jump forward' \"send -X jump-forward '%%'\"",
+		"bind -Tcopy-mode-vi f command-prompt -1p'jump forward' \"send -X jump-forward \\\"%%%\\\"\"",
 		"bind -Tcopy-mode-vi g send -X history-top",
 		"bind -Tcopy-mode-vi h send -X cursor-left",
 		"bind -Tcopy-mode-vi j send -X cursor-down",
@@ -352,7 +351,7 @@ key_bindings_init(void)
 		"bind -Tcopy-mode-vi n send -X search-again",
 		"bind -Tcopy-mode-vi o send -X other-end",
 		"bind -Tcopy-mode-vi q send -X cancel",
-		"bind -Tcopy-mode-vi t command-prompt -1p'jump to forward' \"send -X jump-to-forward '%%'\"",
+		"bind -Tcopy-mode-vi t command-prompt -1p'jump to forward' \"send -X jump-to-forward \\\"%%%\\\"\"",
 		"bind -Tcopy-mode-vi v send -X rectangle-toggle",
 		"bind -Tcopy-mode-vi w send -X next-word",
 		"bind -Tcopy-mode-vi { send -X previous-paragraph",
@@ -377,18 +376,22 @@ key_bindings_init(void)
 	struct cmd_list	*cmdlist;
 	char		*cause;
 	int		 error;
-	struct cmd_q	*cmdq;
 
-	cmdq = cmdq_new(NULL);
 	for (i = 0; i < nitems(defaults); i++) {
 		error = cmd_string_parse(defaults[i], &cmdlist,
 		    "<default-keys>", i, &cause);
 		if (error != 0)
 			fatalx("bad default key");
-		cmdq_run(cmdq, cmdlist, NULL);
+		cmdq_append(NULL, cmdq_get_command(cmdlist, NULL, NULL, 0));
 		cmd_list_free(cmdlist);
 	}
-	cmdq_free(cmdq);
+}
+
+static enum cmd_retval
+key_bindings_read_only(struct cmdq_item *item, __unused void *data)
+{
+	cmdq_error(item, "client is read-only");
+	return (CMD_RETURN_ERROR);
 }
 
 void
@@ -403,10 +406,8 @@ key_bindings_dispatch(struct key_binding *bd, struct client *c,
 		if (!(cmd->entry->flags & CMD_READONLY))
 			readonly = 0;
 	}
-	if (!readonly && (c->flags & CLIENT_READONLY)) {
-		cmdq_error(c->cmdq, "client is read-only");
-		return;
-	}
-
-	cmdq_run(c->cmdq, bd->cmdlist, m);
+	if (!readonly && (c->flags & CLIENT_READONLY))
+		cmdq_append(c, cmdq_get_callback(key_bindings_read_only, NULL));
+	else
+		cmdq_append(c, cmdq_get_command(bd->cmdlist, NULL, m, 0));
 }
