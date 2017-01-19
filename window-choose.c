@@ -255,7 +255,8 @@ window_choose_data_run(struct window_choose_data *cdata)
 	if (cdata->command == NULL)
 		return;
 
-	if (cmd_string_parse(cdata->command, &cmdlist, NULL, 0, &cause) != 0) {
+	cmdlist = cmd_string_parse(cdata->command, NULL, 0, &cause);
+	if (cmdlist == NULL) {
 		if (cause != NULL) {
 			*cause = toupper((u_char) *cause);
 			status_message_set(cdata->start_client, "%s", cause);
@@ -796,6 +797,7 @@ window_choose_write_line(struct window_pane *wp, struct screen_write_ctx *ctx,
 
 	last = screen_size_y(s) - 1;
 	memcpy(&gc, &grid_default_cell, sizeof gc);
+	gc.flags |= GRID_FLAG_NOPALETTE;
 	if (data->selected == data->top + py)
 		style_apply(&gc, oo, "mode-style");
 

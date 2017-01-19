@@ -1,6 +1,6 @@
 # configure.ac
 
-AC_INIT(tmux, 2.4)
+AC_INIT(tmux, master)
 
 AC_CONFIG_AUX_DIR(etc)
 AM_INIT_AUTOMAKE([foreign subdir-objects])
@@ -222,9 +222,11 @@ if test "x$enable_utempter" = xyes; then
 			enable_utempter=yes,
 			enable_utempter=no
 		)
-		if test "x$enable_utempter" = xyes; then
-			AC_DEFINE(HAVE_UTEMPTER)
-		fi
+	fi
+	if test "x$enable_utempter" = xyes; then
+		AC_DEFINE(HAVE_UTEMPTER)
+	else
+		AC_MSG_ERROR("utempter not found")
 	fi
 fi
 
@@ -242,9 +244,11 @@ if test "x$enable_utf8proc" = xyes; then
 			enable_utf8proc=yes,
 			enable_utf8proc=no
 		)
-		if test "x$enable_utf8proc" = xyes; then
-			AC_DEFINE(HAVE_UTF8PROC)
-		fi
+	fi
+	if test "x$enable_utf8proc" = xyes; then
+		AC_DEFINE(HAVE_UTF8PROC)
+	else
+		AC_MSG_ERROR("utf8proc not found")
 	fi
 fi
 AM_CONDITIONAL(HAVE_UTF8PROC, [test "x$enable_utf8proc" = xyes])
@@ -447,6 +451,17 @@ if test "x$found_stravis" = xyes; then
 	if test "x$found_stravis" = xno; then
 		AC_MSG_RESULT(yes)
 	fi
+fi
+if test "x$found_stravis" = xyes; then
+	AC_CHECK_DECL(
+		VIS_DQ,
+		,
+		found_stravis=no,
+		[
+			#include <stdlib.h>
+			#include <vis.h>
+		]
+)
 fi
 if test "x$found_stravis" = xyes; then
 	AC_DEFINE(HAVE_VIS)

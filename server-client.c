@@ -294,6 +294,33 @@ server_client_detach(struct client *c, enum msgtype msgtype)
 	proc_send_s(c->peer, msgtype, s->name);
 }
 
+/* Execute command to replace a client. */
+void
+server_client_exec(struct client *c, const char *cmd)
+{
+	struct session	*s = c->session;
+	char		*msg;
+	const char	*shell;
+	size_t		 cmdsize, shellsize;
+
+	if (*cmd == '\0')
+		return;
+	cmdsize = strlen(cmd) + 1;
+
+	if (s != NULL)
+		shell = options_get_string(s->options, "default-shell");
+	else
+		shell = options_get_string(global_s_options, "default-shell");
+	shellsize = strlen(shell) + 1;
+
+	msg = xmalloc(cmdsize + shellsize);
+	memcpy(msg, cmd, cmdsize);
+	memcpy(msg + cmdsize, shell, shellsize);
+
+	proc_send(c->peer, MSG_EXEC, -1, msg, cmdsize + shellsize);
+	free(msg);
+}
+
 /* Check for mouse keys. */
 static key_code
 server_client_check_mouse(struct client *c)
@@ -473,7 +500,7 @@ have_event:
 		break;
 	case DRAG:
 		if (c->tty.mouse_drag_update != NULL)
-			c->tty.mouse_drag_update(c, m);
+			key = KEYC_DRAGGING;
 		else {
 			switch (MOUSE_BUTTONS(b)) {
 			case 0:
@@ -690,15 +717,12 @@ server_client_handle_key(struct client *c, key_code key)
 	struct key_table	*table;
 	struct key_binding	 bd_find, *bd;
 	int			 xtimeout;
+	struct cmd_find_state	 fs;
 
 	/* Check the client is good to accept input. */
 	if (s == NULL || (c->flags & (CLIENT_DEAD|CLIENT_SUSPENDED)) != 0)
 		return;
 	w = s->curw->window;
-	if (KEYC_IS_MOUSE(key))
-		wp = cmd_mouse_pane(m, NULL, NULL);
-	else
-		wp = w->active;
 
 	/* Update the activity timer. */
 	if (gettimeofday(&c->activity_time, NULL) != 0)
@@ -730,6 +754,7 @@ server_client_handle_key(struct client *c, key_code key)
 	}
 
 	/* Check for mouse keys. */
+	m->valid = 0;
 	if (key == KEYC_MOUSE) {
 		if (c->flags & CLIENT_READONLY)
 			return;
@@ -740,10 +765,26 @@ server_client_handle_key(struct client *c, key_code key)
 		m->valid = 1;
 		m->key = key;
 
-		if (!options_get_number(s->options, "mouse"))
-			goto forward;
+		/*
+		 * Mouse drag is in progress, so fire the callback (now that
+		 * the mouse event is valid).
+		 */
+		if (key == KEYC_DRAGGING) {
+			c->tty.mouse_drag_update(c, m);
+			return;
+		}
 	} else
 		m->valid = 0;
+
+	/* Find affected pane. */
+	if (KEYC_IS_MOUSE(key) && m->valid)
+		wp = cmd_mouse_pane(m, NULL, NULL);
+	else
+		wp = w->active;
+
+	/* Forward mouse keys if disabled. */
+	if (KEYC_IS_MOUSE(key) && !options_get_number(s->options, "mouse"))
+		goto forward;
 
 	/* Treat everything as a regular key when pasting is detected. */
 	if (!KEYC_IS_MOUSE(key) && server_client_assume_paste(s))
@@ -761,6 +802,22 @@ retry:
 		table = c->keytable;
 	else
 		table = key_bindings_get_table(name, 1);
+	if (wp == NULL)
+		log_debug("key table %s (no pane)", table->name);
+	else
+		log_debug("key table %s (pane %%%u)", table->name, wp->id);
+
+	/*
+	 * The prefix always takes precedence and forces a switch to the prefix
+	 * table, unless we are already there.
+	 */
+	if ((key == (key_code)options_get_number(s->options, "prefix") ||
+	    key == (key_code)options_get_number(s->options, "prefix2")) &&
+	    strcmp(table->name, "prefix") != 0) {
+		server_client_set_key_table(c, "prefix");
+		server_status_client(c);
+		return;
+	}
 
 	/* Try to see if there is a key binding in the current table. */
 	bd_find.key = key;
@@ -802,8 +859,21 @@ retry:
 		}
 		server_status_client(c);
 
+		/* Find default state if the pane is known. */
+		cmd_find_clear_state(&fs, NULL, 0);
+		if (wp != NULL) {
+			fs.s = s;
+			fs.wl = fs.s->curw;
+			fs.w = fs.wl->window;
+			fs.wp = wp;
+			cmd_find_log_state(__func__, &fs);
+
+			if (!cmd_find_valid_state(&fs))
+				fatalx("invalid key state");
+		}
+
 		/* Dispatch the key binding. */
-		key_bindings_dispatch(bd, c, m);
+		key_bindings_dispatch(bd, c, m, &fs);
 		key_bindings_unref_table(table);
 		return;
 	}
@@ -821,18 +891,8 @@ retry:
 
 	/* If no match and we're not in the root table, that's it. */
 	if (name == NULL && !server_client_is_default_key_table(c)) {
+		log_debug("no key in key table %s", table->name);
 		server_client_set_key_table(c, NULL);
-		server_status_client(c);
-		return;
-	}
-
-	/*
-	 * No match, but in the root table. Prefix switches to the prefix table
-	 * and everything else is passed through.
-	 */
-	if (key == (key_code)options_get_number(s->options, "prefix") ||
-	    key == (key_code)options_get_number(s->options, "prefix2")) {
-		server_client_set_key_table(c, "prefix");
 		server_status_client(c);
 		return;
 	}

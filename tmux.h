@@ -49,6 +49,7 @@ struct input_ctx;
 struct mode_key_cmdstr;
 struct mouse_event;
 struct options;
+struct options_entry;
 struct session;
 struct tmuxpeer;
 struct tmuxproc;
@@ -78,7 +79,7 @@ struct tmuxproc;
 
 #define READ_CHANGE_HITS 3
 
-/* Attribute to make gcc check printf-like arguments. */
+/* Attribute to make GCC check printf-like arguments. */
 #define printflike(a, b) __attribute__ ((format (printf, a, b)))
 
 /* Number of items in array. */
@@ -137,6 +138,7 @@ enum {
 
 	/* Mouse keys. */
 	KEYC_MOUSE, /* unclassified mouse event */
+	KEYC_DRAGGING, /* dragging in progress */
 	KEYC_MOUSE_KEY(MOUSEDOWN1),
 	KEYC_MOUSE_KEY(MOUSEDOWN2),
 	KEYC_MOUSE_KEY(MOUSEDOWN3),
@@ -444,6 +446,7 @@ enum msgtype {
 	MSG_SUSPEND,
 	MSG_UNLOCK,
 	MSG_WAKEUP,
+	MSG_EXEC,
 };
 
 /*
@@ -577,6 +580,7 @@ enum utf8_state {
 #define GRID_FLAG_PADDING 0x4
 #define GRID_FLAG_EXTENDED 0x8
 #define GRID_FLAG_SELECTED 0x10
+#define GRID_FLAG_NOPALETTE 0x20
 
 /* Grid line flags. */
 #define GRID_LINE_WRAPPED 0x1
@@ -640,23 +644,6 @@ struct hook {
 	RB_ENTRY(hook)	 entry;
 };
 
-/* Option data structures. */
-struct options_entry {
-	const char		*name;
-
-	enum {
-		OPTIONS_STRING,
-		OPTIONS_NUMBER,
-		OPTIONS_STYLE
-	} type;
-
-	char			*str;
-	long long		 num;
-	struct grid_cell	 style;
-
-	RB_ENTRY(options_entry) entry;
-};
-
 /* Scheduled job. */
 struct job {
 	enum {
@@ -683,6 +670,8 @@ LIST_HEAD(joblist, job);
 /* Screen selection. */
 struct screen_sel {
 	int		 flag;
+	int		 hidden;
+
 	int		 rectflag;
 	enum {
 		LINE_SEL_NONE,
@@ -827,6 +816,8 @@ struct window_pane {
 	struct input_ctx *ictx;
 
 	struct grid_cell colgc;
+
+	int		*palette;
 
 	int		 pipe_fd;
 	struct bufferevent *pipe_event;
@@ -1103,9 +1094,6 @@ struct tty {
 	u_int		 rleft;
 	u_int		 rright;
 
-	char		*termname;
-	struct tty_term	*term;
-
 	int		 fd;
 	struct bufferevent *event;
 
@@ -1122,6 +1110,8 @@ struct tty {
 #define TTY_FOCUS 0x40
 	int		 flags;
 
+	struct tty_term	*term;
+	char		*term_name;
 	int		 term_flags;
 	enum {
 		TTY_VT100,
@@ -1143,6 +1133,8 @@ struct tty {
 	struct event	 key_timer;
 	struct tty_key	*key_tree;
 };
+#define TTY_TYPES \
+	{ "VT100", "VT101", "VT102", "VT220", "VT320", "VT420", "UNKNOWN" }
 
 /* TTY command context. */
 struct tty_ctx {
@@ -1304,7 +1296,7 @@ enum cmd_entry_flag {
 	CMD_SESSION,
 	CMD_SESSION_CANFAIL,
 	CMD_SESSION_PREFERUNATTACHED,
-	CMD_SESSION_WITHPANE,
+	CMD_SESSION_WITHPANE, /* implies PREFERUNATTACHED */
 
 	CMD_WINDOW,
 	CMD_WINDOW_CANFAIL,
@@ -1416,7 +1408,7 @@ struct client {
 	char		*prompt_string;
 	struct utf8_data *prompt_buffer;
 	size_t		 prompt_index;
-	int		 (*prompt_callbackfn)(void *, const char *);
+	int		 (*prompt_callbackfn)(void *, const char *, int);
 	void		 (*prompt_freefn)(void *);
 	void		*prompt_data;
 	u_int		 prompt_hindex;
@@ -1424,6 +1416,7 @@ struct client {
 
 #define PROMPT_SINGLE 0x1
 #define PROMPT_NUMERIC 0x2
+#define PROMPT_INCREMENTAL 0x4
 	int		 prompt_flags;
 
 	struct session	*session;
@@ -1457,11 +1450,7 @@ struct key_table {
 };
 RB_HEAD(key_tables, key_table);
 
-/*
- * Option table entries. The option table is the user-visible part of the
- * option, as opposed to the internal options (struct option) which are just
- * number or string.
- */
+/* Option table entries. */
 enum options_table_type {
 	OPTIONS_TABLE_STRING,
 	OPTIONS_TABLE_NUMBER,
@@ -1470,7 +1459,8 @@ enum options_table_type {
 	OPTIONS_TABLE_ATTRIBUTES,
 	OPTIONS_TABLE_FLAG,
 	OPTIONS_TABLE_CHOICE,
-	OPTIONS_TABLE_STYLE
+	OPTIONS_TABLE_STYLE,
+	OPTIONS_TABLE_ARRAY,
 };
 enum options_table_scope {
 	OPTIONS_TABLE_NONE,
@@ -1558,6 +1548,7 @@ char		*paste_make_sample(struct paste_buffer *);
 /* format.c */
 #define FORMAT_STATUS 0x1
 #define FORMAT_FORCE 0x2
+#define FORMAT_NOJOBS 0x4
 struct format_tree;
 struct format_tree *format_create(struct cmdq_item *, int);
 void		 format_free(struct format_tree *);
@@ -1613,29 +1604,48 @@ void	notify_window(const char *, struct window *);
 void	notify_pane(const char *, struct window_pane *);
 
 /* options.c */
-struct options *options_create(struct options *);
-void	options_free(struct options *);
+struct options	*options_create(struct options *);
+void		 options_free(struct options *);
 struct options_entry *options_first(struct options *);
 struct options_entry *options_next(struct options_entry *);
-struct options_entry *options_find1(struct options *, const char *);
-struct options_entry *options_find(struct options *, const char *);
-void	options_remove(struct options *, const char *);
-struct options_entry *printflike(3, 4) options_set_string(struct options *,
-	    const char *, const char *, ...);
-char   *options_get_string(struct options *, const char *);
+struct options_entry *options_empty(struct options *,
+		     const struct options_table_entry *);
+struct options_entry *options_default(struct options *,
+		     const struct options_table_entry *);
+const char	*options_name(struct options_entry *);
+const struct options_table_entry *options_table_entry(struct options_entry *);
+struct options_entry *options_get_only(struct options *, const char *);
+struct options_entry *options_get(struct options *, const char *);
+void		 options_remove(struct options_entry *);
+const char	*options_array_get(struct options_entry *, u_int);
+int		 options_array_set(struct options_entry *, u_int, const char *);
+int		 options_array_size(struct options_entry *, u_int *);
+int		 options_isstring(struct options_entry *);
+const char	*options_tostring(struct options_entry *, int);
+char		*options_parse(const char *, int *);
+struct options_entry *options_parse_get(struct options *, const char *, int *,
+		    int);
+char		*options_match(const char *, int *, int *);
+struct options_entry *options_match_get(struct options *, const char *, int *,
+		    int, int *);
+const char	*options_get_string(struct options *, const char *);
+long long	 options_get_number(struct options *, const char *);
+const struct grid_cell *options_get_style(struct options *, const char *);
+struct options_entry * printflike(4, 5) options_set_string(struct options *,
+		     const char *, int, const char *, ...);
 struct options_entry *options_set_number(struct options *, const char *,
-	    long long);
-long long options_get_number(struct options *, const char *);
-struct options_entry *options_set_style(struct options *, const char *,
-	    const char *, int);
-struct grid_cell *options_get_style(struct options *, const char *);
+		     long long);
+struct options_entry *options_set_style(struct options *, const char *, int,
+		     const char *);
+enum options_table_scope options_scope_from_flags(struct args *, int,
+		     struct cmd_find_state *, struct options **, char **);
+void		 options_style_update_new(struct options *,
+		     struct options_entry *);
+void		 options_style_update_old(struct options *,
+		     struct options_entry *);
 
 /* options-table.c */
 extern const struct options_table_entry options_table[];
-void	options_table_populate_tree(enum options_table_scope, struct options *);
-const char *options_table_print_entry(const struct options_table_entry *,
-	    struct options_entry *, int);
-int	options_table_find(const char *, const struct options_table_entry **);
 
 /* job.c */
 extern struct joblist all_jobs;
@@ -1815,8 +1825,7 @@ void printflike(2, 3) cmdq_print(struct cmdq_item *, const char *, ...);
 void printflike(2, 3) cmdq_error(struct cmdq_item *, const char *, ...);
 
 /* cmd-string.c */
-int	cmd_string_parse(const char *, struct cmd_list **, const char *,
-	    u_int, char **);
+struct cmd_list	*cmd_string_parse(const char *, const char *, u_int, char **);
 
 /* cmd-wait-for.c */
 void	cmd_wait_for_flush(void);
@@ -1837,7 +1846,7 @@ void	 key_bindings_remove(const char *, key_code);
 void	 key_bindings_remove_table(const char *);
 void	 key_bindings_init(void);
 void	 key_bindings_dispatch(struct key_binding *, struct client *,
-	     struct mouse_event *);
+	     struct mouse_event *, struct cmd_find_state *);
 
 /* key-string.c */
 key_code	 key_string_lookup_string(const char *);
@@ -1873,6 +1882,7 @@ int	 server_client_open(struct client *, char **);
 void	 server_client_unref(struct client *);
 void	 server_client_lost(struct client *);
 void	 server_client_detach(struct client *, enum msgtype);
+void	 server_client_exec(struct client *, const char *);
 void	 server_client_loop(void);
 void	 server_client_push_stdout(struct client *);
 void	 server_client_push_stderr(struct client *);
@@ -1914,7 +1924,7 @@ void printflike(2, 3) status_message_set(struct client *, const char *, ...);
 void	 status_message_clear(struct client *);
 int	 status_message_redraw(struct client *);
 void	 status_prompt_set(struct client *, const char *, const char *,
-	     int (*)(void *, const char *), void (*)(void *), void *, int);
+	     int (*)(void *, const char *, int), void (*)(void *), void *, int);
 void	 status_prompt_clear(struct client *);
 int	 status_prompt_redraw(struct client *);
 int	 status_prompt_key(struct client *, key_code);
@@ -2010,7 +2020,7 @@ void	 screen_write_vnputs(struct screen_write_ctx *, ssize_t,
 void	 screen_write_putc(struct screen_write_ctx *, const struct grid_cell *,
 	     u_char);
 void	 screen_write_copy(struct screen_write_ctx *, struct screen *, u_int,
-	     u_int, u_int, u_int);
+	     u_int, u_int, u_int, bitstr_t *, const struct grid_cell *);
 void	 screen_write_backspace(struct screen_write_ctx *);
 void	 screen_write_mode_set(struct screen_write_ctx *, int);
 void	 screen_write_mode_clear(struct screen_write_ctx *, int);
@@ -2057,6 +2067,7 @@ void	 screen_resize(struct screen *, u_int, u_int, int);
 void	 screen_set_selection(struct screen *,
 	     u_int, u_int, u_int, u_int, u_int, struct grid_cell *);
 void	 screen_clear_selection(struct screen *);
+void	 screen_hide_selection(struct screen *);
 int	 screen_check_selection(struct screen *, u_int, u_int);
 void	 screen_select_cell(struct screen *, struct grid_cell *,
 	     const struct grid_cell *);
@@ -2123,6 +2134,10 @@ void		 window_pane_alternate_on(struct window_pane *,
 		     struct grid_cell *, int);
 void		 window_pane_alternate_off(struct window_pane *,
 		     struct grid_cell *, int);
+void		 window_pane_set_palette(struct window_pane *, u_int, int);
+void		 window_pane_unset_palette(struct window_pane *, u_int);
+void		 window_pane_reset_palette(struct window_pane *);
+int		 window_pane_get_palette(const struct window_pane *, int);
 int		 window_pane_set_mode(struct window_pane *,
 		     const struct window_mode *);
 void		 window_pane_reset_mode(struct window_pane *);
@@ -2282,6 +2297,7 @@ enum utf8_state	 utf8_append(struct utf8_data *, u_char);
 enum utf8_state	 utf8_combine(const struct utf8_data *, wchar_t *);
 enum utf8_state	 utf8_split(wchar_t, struct utf8_data *);
 int		 utf8_strvis(char *, const char *, size_t, int);
+int		 utf8_stravis(char **, const char *, int);
 char		*utf8_sanitize(const char *);
 size_t		 utf8_strlen(const struct utf8_data *);
 u_int		 utf8_strwidth(const struct utf8_data *, ssize_t);
@@ -2310,9 +2326,6 @@ __dead void printflike(1, 2) fatalx(const char *, ...);
 int		 style_parse(const struct grid_cell *,
 		     struct grid_cell *, const char *);
 const char	*style_tostring(struct grid_cell *);
-void		 style_update_new(struct options *, const char *, const char *);
-void		 style_update_old(struct options *, const char *,
-		     struct grid_cell *);
 void		 style_apply(struct grid_cell *, struct options *,
 		     const char *);
 void		 style_apply_update(struct grid_cell *, struct options *,

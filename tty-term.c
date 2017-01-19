@@ -388,8 +388,7 @@ tty_term_find(char *name, int fd, char **cause)
 	struct tty_code				*code;
 	u_int					 i;
 	int		 			 n, error;
-	char					*s;
-	const char				*acs;
+	const char				*s, *acs;
 
 	LIST_FOREACH(term, &tty_terms, entry) {
 		if (strcmp(term->name, name) == 0) {
@@ -403,7 +402,7 @@ tty_term_find(char *name, int fd, char **cause)
 	term->name = xstrdup(name);
 	term->references = 1;
 	term->flags = 0;
-	term->codes = xcalloc (tty_term_ncodes(), sizeof *term->codes);
+	term->codes = xcalloc(tty_term_ncodes(), sizeof *term->codes);
 	LIST_INSERT_HEAD(&tty_terms, term, entry);
 
 	/* Set up curses terminal. */

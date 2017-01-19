@@ -392,12 +392,13 @@ screen_write_cnputs(struct screen_write_ctx *ctx, ssize_t maxlen,
 /* Copy from another screen. */
 void
 screen_write_copy(struct screen_write_ctx *ctx, struct screen *src, u_int px,
-    u_int py, u_int nx, u_int ny)
+    u_int py, u_int nx, u_int ny, bitstr_t *markbs,
+    const struct grid_cell *markgc)
 {
 	struct screen		*s = ctx->s;
 	struct grid		*gd = src->grid;
 	struct grid_cell	 gc;
-	u_int		 	 xx, yy, cx, cy;
+	u_int		 	 xx, yy, cx, cy, b;
 
 	cx = s->cx;
 	cy = s->cy;
@@ -405,6 +406,14 @@ screen_write_copy(struct screen_write_ctx *ctx, struct screen *src, u_int px,
 	for (yy = py; yy < py + ny; yy++) {
 		for (xx = px; xx < px + nx; xx++) {
 			grid_get_cell(gd, xx, yy, &gc);
+			if (markbs != NULL) {
+				b = (yy * screen_size_x(src)) + xx;
+				if (bit_test(markbs, b)) {
+					gc.attr = markgc->attr;
+					gc.fg = markgc->fg;
+					gc.bg = markgc->bg;
+				}
+			}
 			screen_write_cell(ctx, &gc);
 		}
 
@@ -516,7 +525,7 @@ screen_write_cursordown(struct screen_write_ctx *ctx, u_int ny)
 	s->cy += ny;
 }
 
-/* Cursor right by nx.  */
+/* Cursor right by nx. */
 void
 screen_write_cursorright(struct screen_write_ctx *ctx, u_int nx)
 {
@@ -839,7 +848,7 @@ screen_write_clearstartofline(struct screen_write_ctx *ctx, u_int bg)
 	tty_write(tty_cmd_clearstartofline, &ttyctx);
 }
 
-/* Move cursor to px,py.  */
+/* Move cursor to px,py. */
 void
 screen_write_cursormove(struct screen_write_ctx *ctx, u_int px, u_int py)
 {
@@ -854,7 +863,7 @@ screen_write_cursormove(struct screen_write_ctx *ctx, u_int px, u_int py)
 	s->cy = py;
 }
 
-/* Reverse index (up with scroll).  */
+/* Reverse index (up with scroll). */
 void
 screen_write_reverseindex(struct screen_write_ctx *ctx)
 {
@@ -1040,7 +1049,7 @@ screen_write_cell(struct screen_write_ctx *ctx, const struct grid_cell *gc)
 	width = gc->data.width;
 
 	/*
-	 * If this is a wide character and there is no room on the screen, for
+	 * If this is a wide character and there is no room on the screen for
 	 * the entire character, don't print it.
 	 */
 	if (!(s->mode & MODE_WRAP) && (width > 1 &&

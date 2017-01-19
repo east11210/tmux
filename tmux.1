@@ -176,14 +176,16 @@ is specified, the default socket directory is not used and any
 .Fl L
 flag is ignored.
 .It Fl u
+When starting,
 .Nm
-attempts to guess if the terminal is likely to support UTF-8 by checking the
-first of the
+looks for the
 .Ev LC_ALL ,
 .Ev LC_CTYPE
 and
 .Ev LANG
-environment variables to be set for the string "UTF-8".
+environment variables: if the first found contains
+.Ql UTF-8 ,
+then the terminal is assumed to support UTF-8.
 This is not always correct: the
 .Fl u
 flag explicitly informs
@@ -726,6 +728,7 @@ is used, the
 option will not be applied.
 .It Xo Ic detach-client
 .Op Fl aP
+.Op Fl E Ar shell-command
 .Op Fl s Ar target-session
 .Op Fl t Ar target-client
 .Xc
@@ -742,6 +745,11 @@ If
 .Fl P
 is given, send SIGHUP to the parent process of the client, typically causing it
 to exit.
+With
+.Fl E ,
+run
+.Ar shell-command
+to replace the client.
 .It Ic has-session Op Fl t Ar target-session
 .D1 (alias: Ic has )
 Report an error and exit with 1 if the specified session does not exist.
@@ -925,12 +933,38 @@ show debugging information about jobs and terminals.
 .Xc
 .D1 (alias: Ic source )
 Execute commands from
-.Ar path .
+.Ar path
+(which may be a
+.Xr glob 3
+pattern).
 If
 .Fl q
 is given, no error will be returned if
 .Ar path
 does not exist.
+.Pp
+Within a configuration file, commands may be made conditional by surrounding
+them with
+.Em %if
+and
+.Em %endif
+lines.
+The argument to
+.Em %if
+is expanded as a format and if it evaluates to false
+(zero or empty), subsequent lines are ignored until
+.Em %endif .
+For example:
+.Bd -literal -offset indent
+%if #{==:#{host},myhost}
+set -g status-style bg=red
+%endif
+.Ed
+.Pp
+Will change the status line to red if running on
+.Ql myhost .
+.Em %if
+may not be nested.
 .It Ic start-server
 .D1 (alias: Ic start )
 Start the
@@ -1024,7 +1058,7 @@ Key tables may be viewed with the
 command.
 .Pp
 The following commands are supported in copy mode:
-.Bl -column "CommandXXXXXXXXXXXXXXXXX" "viXXXXXXXXXX" "emacs" -offset indent
+.Bl -column "CommandXXXXXXXXXXXXXXXXXXXXXXXXXX" "viXXXXXXXXXX" "emacs" -offset indent
 .It Sy "Command" Ta Sy "vi" Ta Sy "emacs"
 .It Li "append-selection" Ta "" Ta ""
 .It Li "append-selection-and-cancel" Ta "A" Ta ""
@@ -1071,11 +1105,14 @@ The following commands are supported in copy mode:
 .It Li "scroll-down" Ta "C-e" Ta "C-Down"
 .It Li "scroll-up" Ta "C-y" Ta "C-Up"
 .It Li "search-again" Ta "n" Ta "n"
-.It Li "search-backward <for>" Ta "?" Ta "C-r"
-.It Li "search-forward <for>" Ta "/" Ta "C-s"
+.It Li "search-backward <for>" Ta "?" Ta ""
+.It Li "search-forward <for>" Ta "/" Ta ""
+.It Li "search-backward-incremental <for>" Ta "" Ta "C-r"
+.It Li "search-forward-incremental <for>" Ta "" Ta "C-s"
 .It Li "search-reverse" Ta "N" Ta "N"
 .It Li "select-line" Ta "V" Ta ""
 .It Li "start-of-line" Ta "0" Ta "C-a"
+.It Li "stop-selection" Ta "" Ta ""
 .It Li "top-line" Ta "H" Ta "M-R"
 .El
 .Pp
@@ -1158,11 +1195,11 @@ flag) or vertically.
 Panes may be resized with the
 .Ic resize-pane
 command (bound to
-.Ql C-up ,
-.Ql C-down
-.Ql C-left
+.Ql C-Up ,
+.Ql C-Down
+.Ql C-Left
 and
-.Ql C-right
+.Ql C-Right
 by default), the current pane may be changed with the
 .Ic select-pane
 command and the
@@ -1699,12 +1736,14 @@ option to change this behaviour.
 The
 .Ev TERM
 environment variable must be set to
-.Dq screen
+.Ql screen
+or
+.Ql tmux
 for all programs running
 .Em inside
 .Nm .
 New windows will automatically have
-.Dq TERM=screen
+.Ql TERM=screen
 added to their environment, but care must be taken not to reset this in shell
 start-up files.
 .Pp
@@ -2197,8 +2236,8 @@ Each argument
 is the name of the key (such as
 .Ql C-a
 or
-.Ql npage
-) to send; if the string is not recognised as a key, it is sent as a series of
+.Ql NPage )
+to send; if the string is not recognised as a key, it is sent as a series of
 characters.
 The
 .Fl l
@@ -2218,7 +2257,7 @@ the
 .Sx WINDOWS AND PANES
 section.
 .Fl N
-specifies a repeat count to a copy mode command.
+specifies a repeat count.
 .It Xo Ic send-prefix
 .Op Fl 2
 .Op Fl t Ar target-pane
@@ -3395,6 +3434,21 @@ is enabled, or
 .Ql no
 if not.
 .Pp
+Simple comparisons may be expressed by prefixing two comma-separated
+alternatives by
+.Ql ==
+or
+.Ql !=
+and a colon.
+For example
+.Ql #{==,#{host},myhost}
+will be replaced by
+.Ql 1
+if running on
+.Ql myhost ,
+otherwise by
+.Ql 0.
+.Pp
 A limit may be placed on the length of the resultant string by prefixing it
 by an
 .Ql = ,
@@ -3468,6 +3522,7 @@ The following variables are available, where appropriate:
 .It Li "client_readonly" Ta "" Ta "1 if client is readonly"
 .It Li "client_session" Ta "" Ta "Name of the client's session"
 .It Li "client_termname" Ta "" Ta "Terminal name of client"
+.It Li "client_termtype" Ta "" Ta "Terminal type of client"
 .It Li "client_tty" Ta "" Ta "Pseudo terminal of client"
 .It Li "client_utf8" Ta "" Ta "1 if client supports utf8"
 .It Li "client_width" Ta "" Ta "Width of client"
@@ -3536,6 +3591,7 @@ The following variables are available, where appropriate:
 .It Li "session_windows" Ta "" Ta "Number of windows in session"
 .It Li "socket_path" Ta "" Ta "Server socket path"
 .It Li "start_time" Ta "" Ta "Server start time"
+.It Li "version" Ta "" Ta "Server version"
 .It Li "window_activity" Ta "" Ta "Integer time of window last activity"
 .It Li "window_activity_flag" Ta "" Ta "1 if window has activity"
 .It Li "window_active" Ta "" Ta "1 if window active"
@@ -3734,7 +3790,7 @@ session option.
 Commands related to the status line are as follows:
 .Bl -tag -width Ds
 .It Xo Ic command-prompt
-.Op Fl 1
+.Op Fl 1i
 .Op Fl I Ar inputs
 .Op Fl p Ar prompts
 .Op Fl t Ar target-client
@@ -3784,6 +3840,9 @@ but any quotation marks are escaped.
 .Fl 1
 makes the prompt only accept one key press, in this case the resulting input
 is a single character.
+.Fl i
+executes the command every time the prompt input changes instead of when the
+user exits the command prompt.
 .Pp
 The following keys have a special meaning in the command prompt, depending
 on the value of the
@@ -4112,6 +4171,16 @@ is not set, \&Ss with argument 0 will be used to reset the cursor style instead.
 Indicate that the terminal supports the
 .Ql direct colour
 RGB escape sequence (for example, \ee[38;2;255;255;255m).
+.Pp
+If supported, this is used for the OSC initialize colour escape sequence (which
+may be enabled by adding the
+.Ql initc
+and
+.Ql ccc
+capabilities to the
+.Nm
+.Xr terminfo 5
+entry).
 .It Em \&Ms
 Store the current buffer in the host terminal's selection (clipboard).
 See the

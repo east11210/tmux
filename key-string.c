@@ -140,6 +140,9 @@ key_string_get_modifiers(const char **string)
 		case 's':
 			modifiers |= KEYC_SHIFT;
 			break;
+		default:
+			*string = NULL;
+			return (0);
 		}
 		*string += 2;
 	}
@@ -179,7 +182,7 @@ key_string_lookup_string(const char *string)
 		string++;
 	}
 	modifiers |= key_string_get_modifiers(&string);
-	if (string[0] == '\0')
+	if (string == NULL || string[0] == '\0')
 		return (KEYC_UNKNOWN);
 
 	/* Is this a standard ASCII key? */
@@ -244,8 +247,14 @@ key_string_lookup_key(key_code key)
 	/* Handle special keys. */
 	if (key == KEYC_UNKNOWN)
 		return ("Unknown");
+	if (key == KEYC_FOCUS_IN)
+		return ("FocusIn");
+	if (key == KEYC_FOCUS_OUT)
+		return ("FocusOut");
 	if (key == KEYC_MOUSE)
 		return ("Mouse");
+	if (key == KEYC_DRAGGING)
+		return ("Dragging");
 
 	/*
 	 * Special case: display C-@ as C-Space. Could do this below in

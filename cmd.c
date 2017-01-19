@@ -409,7 +409,7 @@ cmd_prepare_state_flag(char c, const char *target, enum cmd_entry_flag flag,
 		if (target != NULL && target[strcspn(target, ":.")] != '\0')
 			flag = CMD_PANE;
 		else
-			flag = CMD_SESSION;
+			flag = CMD_SESSION_PREFERUNATTACHED;
 	}
 
 	targetflags = 0;
@@ -417,6 +417,7 @@ cmd_prepare_state_flag(char c, const char *target, enum cmd_entry_flag flag,
 	case CMD_SESSION:
 	case CMD_SESSION_CANFAIL:
 	case CMD_SESSION_PREFERUNATTACHED:
+	case CMD_SESSION_WITHPANE:
 		if (flag == CMD_SESSION_CANFAIL)
 			targetflags |= CMD_FIND_QUIET;
 		if (flag == CMD_SESSION_PREFERUNATTACHED)
@@ -661,7 +662,7 @@ char *
 cmd_template_replace(const char *template, const char *s, int idx)
 {
 	char		 ch, *buf;
-	const char	*ptr, *cp;
+	const char	*ptr, *cp, quote[] = "\"\\$";
 	int		 replaced, quoted;
 	size_t		 len;
 
@@ -688,10 +689,14 @@ cmd_template_replace(const char *template, const char *s, int idx)
 			if (quoted)
 				ptr++;
 
-			buf = xrealloc(buf, len + (strlen(s) * 2) + 1);
+			buf = xrealloc(buf, len + (strlen(s) * 3) + 1);
 			for (cp = s; *cp != '\0'; cp++) {
-				if (quoted && *cp == '"')
+				if (quoted && strchr(quote, *cp) != NULL)
 					buf[len++] = '\\';
+				if (quoted && *cp == ';') {
+					buf[len++] = '\\';
+					buf[len++] = '\\';
+				}
 				buf[len++] = *cp;
 			}
 			buf[len] = '\0';

@@ -48,8 +48,10 @@ static void	tty_cursor_pane(struct tty *, const struct tty_ctx *, u_int,
 		    u_int);
 
 static void	tty_colours(struct tty *, const struct grid_cell *);
-static void	tty_check_fg(struct tty *, struct grid_cell *);
-static void	tty_check_bg(struct tty *, struct grid_cell *);
+static void	tty_check_fg(struct tty *, const struct window_pane *,
+		    struct grid_cell *);
+static void	tty_check_bg(struct tty *, const struct window_pane *,
+		    struct grid_cell *);
 static void	tty_colours_fg(struct tty *, const struct grid_cell *);
 static void	tty_colours_bg(struct tty *, const struct grid_cell *);
 
@@ -103,9 +105,9 @@ tty_init(struct tty *tty, struct client *c, int fd, char *term)
 	memset(tty, 0, sizeof *tty);
 
 	if (term == NULL || *term == '\0')
-		tty->termname = xstrdup("unknown");
+		tty->term_name = xstrdup("unknown");
 	else
-		tty->termname = xstrdup(term);
+		tty->term_name = xstrdup(term);
 	tty->fd = fd;
 	tty->client = c;
 
@@ -175,7 +177,7 @@ tty_set_size(struct tty *tty, u_int sx, u_int sy)
 int
 tty_open(struct tty *tty, char **cause)
 {
-	tty->term = tty_term_find(tty->termname, tty->fd, cause);
+	tty->term = tty_term_find(tty->term_name, tty->fd, cause);
 	if (tty->term == NULL) {
 		tty_close(tty);
 		return (-1);
@@ -362,7 +364,7 @@ tty_free(struct tty *tty)
 
 	free(tty->ccolour);
 	free(tty->path);
-	free(tty->termname);
+	free(tty->term_name);
 }
 
 void
@@ -563,9 +565,7 @@ tty_update_mode(struct tty *tty, int mode, struct screen *s)
 		if (mode & ALL_MOUSE_MODES) {
 			/*
 			 * Enable the SGR (1006) extension unconditionally, as
-			 * this is safe from misinterpretation. Do it in this
-			 * order, because in some terminals it's the last one
-			 * that takes effect and SGR is the preferred one.
+			 * it is safe from misinterpretation.
 			 */
 			tty_puts(tty, "\033[?1006h");
 			if (mode & MODE_MOUSE_BUTTON)
@@ -989,9 +989,8 @@ tty_cmd_linefeed(struct tty *tty, const struct tty_ctx *ctx)
 	if ((!tty_use_margin(tty) ||
 	    tty_pane_full_width(tty, ctx)) &&
 	    ctx->num != 0 &&
-	    !(tty->term->flags & TERM_EARLYWRAP)) {
+	    !(tty->term->flags & TERM_EARLYWRAP))
 		return;
-	}
 
 	tty_attributes(tty, &grid_default_cell, wp);
 
@@ -1004,7 +1003,7 @@ tty_cmd_linefeed(struct tty *tty, const struct tty_ctx *ctx)
 	 * off the edge - if so, move the cursor back to the right.
 	 */
 	if (ctx->xoff + ctx->ocx > tty->rright)
-		tty_cursor(tty, tty->rright, tty->rlower);
+		tty_cursor(tty, tty->rright, ctx->yoff + ctx->ocy);
 	else
 		tty_cursor_pane(tty, ctx, ctx->ocx, ctx->ocy);
 
@@ -1134,18 +1133,17 @@ tty_cmd_cell(struct tty *tty, const struct tty_ctx *ctx)
 	struct screen		*s = wp->screen;
 	u_int			 cx, width;
 
-	if (ctx->xoff + ctx->ocx > tty->sx - 1 &&
-	    ctx->yoff + ctx->ocy == ctx->orlower &&
-	    tty_pane_full_width(tty, ctx))
-		tty_region_pane(tty, ctx, ctx->orupper, ctx->orlower);
-	else
-		tty_region_off(tty);
-	tty_margin_off(tty);
+	if (ctx->xoff + ctx->ocx > tty->sx - 1 && ctx->ocy == ctx->orlower) {
+		if (tty_pane_full_width(tty, ctx))
+			tty_region_pane(tty, ctx, ctx->orupper, ctx->orlower);
+		else
+			tty_margin_off(tty);
+	}
 
 	/* Is the cursor in the very last position? */
 	width = ctx->cell->data.width;
 	if (ctx->ocx > wp->sx - width) {
-		if (ctx->xoff != 0 || wp->sx != tty->sx) {
+		if (!tty_pane_full_width(tty, ctx)) {
 			/*
 			 * The pane doesn't fill the entire line, the linefeed
 			 * will already have happened, so just move the cursor.
@@ -1154,10 +1152,11 @@ tty_cmd_cell(struct tty *tty, const struct tty_ctx *ctx)
 				tty_cursor_pane(tty, ctx, 0, ctx->ocy + 1);
 			else
 				tty_cursor_pane(tty, ctx, 0, ctx->ocy);
-		} else if (tty->cx < tty->sx) {
+		} else if (tty->cy != ctx->yoff + ctx->ocy ||
+		    tty->cx < tty->sx) {
 			/*
 			 * The cursor isn't in the last position already, so
-			 * move as far left as possible and redraw the last
+			 * move as far right as possible and redraw the last
 			 * cell to move into the last position.
 			 */
 			cx = screen_size_x(s) - ctx->last_cell.data.width;
@@ -1507,8 +1506,8 @@ tty_attributes(struct tty *tty, const struct grid_cell *gc,
 	}
 
 	/* Fix up the colours if necessary. */
-	tty_check_fg(tty, &gc2);
-	tty_check_bg(tty, &gc2);
+	tty_check_fg(tty, wp, &gc2);
+	tty_check_bg(tty, wp, &gc2);
 
 	/* If any bits are being cleared, reset everything. */
 	if (tc->attr & ~gc2.attr)
@@ -1604,11 +1603,18 @@ tty_colours(struct tty *tty, const struct grid_cell *gc)
 		tty_colours_bg(tty, gc);
 }
 
-void
-tty_check_fg(struct tty *tty, struct grid_cell *gc)
+static void
+tty_check_fg(struct tty *tty, const struct window_pane *wp,
+    struct grid_cell *gc)
 {
 	u_char	r, g, b;
 	u_int	colours;
+	int	c;
+
+	/* Perform substitution if this pane has a palette */
+	if ((~gc->flags & GRID_FLAG_NOPALETTE) &&
+	    (c = window_pane_get_palette(wp, gc->fg)) != -1)
+		gc->fg = c;
 
 	/* Is this a 24-bit colour? */
 	if (gc->fg & COLOUR_FLAG_RGB) {
@@ -1619,13 +1625,17 @@ tty_check_fg(struct tty *tty, struct grid_cell *gc)
 		} else
 			return;
 	}
-	colours = tty_term_number(tty->term, TTYC_COLORS);
+
+	/* How many colours does this terminal have? */
+	if ((tty->term->flags|tty->term_flags) & TERM_256COLOURS)
+		colours = 256;
+	else
+		colours = tty_term_number(tty->term, TTYC_COLORS);
 
 	/* Is this a 256-colour colour? */
 	if (gc->fg & COLOUR_FLAG_256) {
 		/* And not a 256 colour mode? */
-		if (!(tty->term->flags & TERM_256COLOURS) &&
-		    !(tty->term_flags & TERM_256COLOURS)) {
+		if (colours != 256) {
 			gc->fg = colour_256to16(gc->fg);
 			if (gc->fg & 8) {
 				gc->fg &= 7;
@@ -1646,11 +1656,18 @@ tty_check_fg(struct tty *tty, struct grid_cell *gc)
 	}
 }
 
-void
-tty_check_bg(struct tty *tty, struct grid_cell *gc)
+static void
+tty_check_bg(struct tty *tty, const struct window_pane *wp,
+    struct grid_cell *gc)
 {
 	u_char	r, g, b;
 	u_int	colours;
+	int	c;
+
+	/* Perform substitution if this pane has a palette */
+	if ((~gc->flags & GRID_FLAG_NOPALETTE) &&
+	    (c = window_pane_get_palette(wp, gc->bg)) != -1)
+		gc->bg = c;
 
 	/* Is this a 24-bit colour? */
 	if (gc->bg & COLOUR_FLAG_RGB) {
@@ -1661,7 +1678,12 @@ tty_check_bg(struct tty *tty, struct grid_cell *gc)
 		} else
 			return;
 	}
-	colours = tty_term_number(tty->term, TTYC_COLORS);
+
+	/* How many colours does this terminal have? */
+	if ((tty->term->flags|tty->term_flags) & TERM_256COLOURS)
+		colours = 256;
+	else
+		colours = tty_term_number(tty->term, TTYC_COLORS);
 
 	/* Is this a 256-colour colour? */
 	if (gc->bg & COLOUR_FLAG_256) {
@@ -1670,8 +1692,7 @@ tty_check_bg(struct tty *tty, struct grid_cell *gc)
 		 * palette. Bold background doesn't exist portably, so just
 		 * discard the bold bit if set.
 		 */
-		if (!(tty->term->flags & TERM_256COLOURS) &&
-		    !(tty->term_flags & TERM_256COLOURS)) {
+		if (colours != 256) {
 			gc->bg = colour_256to16(gc->bg);
 			if (gc->bg & 8) {
 				gc->bg &= 7;
@@ -1806,6 +1827,7 @@ tty_default_colours(struct grid_cell *gc, const struct window_pane *wp)
 	struct window		*w = wp->window;
 	struct options		*oo = w->options;
 	const struct grid_cell	*agc, *pgc, *wgc;
+	int			 c;
 
 	if (w->flags & WINDOW_STYLECHANGED) {
 		w->flags &= ~WINDOW_STYLECHANGED;
@@ -1826,6 +1848,10 @@ tty_default_colours(struct grid_cell *gc, const struct window_pane *wp)
 			gc->fg = agc->fg;
 		else
 			gc->fg = wgc->fg;
+
+		if (gc->fg != 8 &&
+		    (c = window_pane_get_palette(wp, gc->fg)) != -1)
+			gc->fg = c;
 	}
 
 	if (gc->bg == 8) {
@@ -1835,6 +1861,10 @@ tty_default_colours(struct grid_cell *gc, const struct window_pane *wp)
 			gc->bg = agc->bg;
 		else
 			gc->bg = wgc->bg;
+
+		if (gc->bg != 8 &&
+		    (c = window_pane_get_palette(wp, gc->bg)) != -1)
+			gc->bg = c;
 	}
 }
 
