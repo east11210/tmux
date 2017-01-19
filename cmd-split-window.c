@@ -87,8 +87,8 @@ cmd_split_window_exec(struct cmd *self, struct cmdq_item *item)
 	} else {
 		argc = args->argc;
 		if (1 == argc) {
-			ft = format_create(cmdq, 0);
-			format_defaults(ft, cmdq->state.c, s, wl, wp);
+			ft = format_create(item, 0);
+			format_defaults(ft, item->state.c, s, wl, wp);
 			shellcmd = format_expand(ft, args->argv[0]);
 			format_free(ft);
 			argv = &shellcmd;
