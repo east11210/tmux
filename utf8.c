@@ -115,7 +115,7 @@ utf8_width(wchar_t wc)
 	width = wcwidth(wc);
 #endif
 	if (width < 0 || width > 0xff) {
-		log_debug("Unicode %04x, wcwidth() %d", wc, width);
+		log_debug("Unicode %04lx, wcwidth() %d", (long)wc, width);
 
 #ifndef __OpenBSD__
 		/*
@@ -216,6 +216,20 @@ utf8_strvis(char *dst, const char *src, size_t len, int flag)
 
 	*dst = '\0';
 	return (dst - start);
+}
+
+/* Same as utf8_strvis but allocate the buffer. */
+int
+utf8_stravis(char **dst, const char *src, int flag)
+{
+	char	*buf;
+	int	 len;
+
+	buf = xreallocarray(NULL, 4, strlen(src) + 1);
+	len = utf8_strvis(buf, src, strlen(src), flag);
+
+	*dst = xrealloc(buf, len + 1);
+	return (len);
 }
 
 /*

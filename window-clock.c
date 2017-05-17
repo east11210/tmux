@@ -34,6 +34,8 @@ static void	window_clock_timer_callback(int, short, void *);
 static void	window_clock_draw_screen(struct window_pane *);
 
 const struct window_mode window_clock_mode = {
+	.name = "clock-mode",
+
 	.init = window_clock_init,
 	.free = window_clock_free,
 	.resize = window_clock_resize,
@@ -230,6 +232,7 @@ window_clock_draw_screen(struct window_pane *wp)
 			screen_write_cursormove(&ctx, x, y);
 
 			memcpy(&gc, &grid_default_cell, sizeof gc);
+			gc.flags |= GRID_FLAG_NOPALETTE;
 			gc.fg = colour;
 			screen_write_puts(&ctx, &gc, "%s", tim);
 		}
@@ -242,6 +245,7 @@ window_clock_draw_screen(struct window_pane *wp)
 	y = (screen_size_y(s) / 2) - 3;
 
 	memcpy(&gc, &grid_default_cell, sizeof gc);
+	gc.flags |= GRID_FLAG_NOPALETTE;
 	gc.bg = colour;
 	for (ptr = tim; *ptr != '\0'; ptr++) {
 		if (*ptr >= '0' && *ptr <= '9')
