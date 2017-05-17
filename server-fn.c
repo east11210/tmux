@@ -27,26 +27,7 @@
 #include "tmux.h"
 
 static struct session	*server_next_session(struct session *);
-static void		 server_callback_identify(int, short, void *);
 static void		 server_destroy_session_group(struct session *);
-
-void
-server_fill_environ(struct session *s, struct environ *env)
-{
-	const char	*term;
-	u_int		 idx;
-	long		 pid;
-
-	if (s != NULL) {
-		term = options_get_string(global_options, "default-terminal");
-		environ_set(env, "TERM", "%s", term);
-
-		idx = s->id;
-	} else
-		idx = (u_int)-1;
-	pid = getpid();
-	environ_set(env, "TMUX", "%s,%ld,%u", socket_path, pid, idx);
-}
 
 void
 server_redraw_client(struct client *c)
@@ -76,7 +57,7 @@ server_redraw_session_group(struct session *s)
 {
 	struct session_group	*sg;
 
-	if ((sg = session_group_find(s)) == NULL)
+	if ((sg = session_group_contains(s)) == NULL)
 		server_redraw_session(s);
 	else {
 		TAILQ_FOREACH(s, &sg->sessions, gentry)
@@ -100,7 +81,7 @@ server_status_session_group(struct session *s)
 {
 	struct session_group	*sg;
 
-	if ((sg = session_group_find(s)) == NULL)
+	if ((sg = session_group_contains(s)) == NULL)
 		server_status_session(s);
 	else {
 		TAILQ_FOREACH(s, &sg->sessions, gentry)
@@ -117,7 +98,6 @@ server_redraw_window(struct window *w)
 		if (c->session != NULL && c->session->curw->window == w)
 			server_redraw_client(c);
 	}
-	w->flags |= WINDOW_REDRAW;
 }
 
 void
@@ -218,7 +198,7 @@ server_kill_window(struct window *w)
 		}
 
 		if (options_get_number(s->options, "renumber-windows")) {
-			if ((sg = session_group_find(s)) != NULL) {
+			if ((sg = session_group_contains(s)) != NULL) {
 				TAILQ_FOREACH(target_s, &sg->sessions, gentry)
 					session_renumber_windows(target_s);
 			} else
@@ -236,8 +216,8 @@ server_link_window(struct session *src, struct winlink *srcwl,
 	struct winlink		*dstwl;
 	struct session_group	*srcsg, *dstsg;
 
-	srcsg = session_group_find(src);
-	dstsg = session_group_find(dst);
+	srcsg = session_group_contains(src);
+	dstsg = session_group_contains(dst);
 	if (src != dst && srcsg != NULL && dstsg != NULL && srcsg == dstsg) {
 		xasprintf(cause, "sessions are grouped");
 		return (-1);
@@ -320,7 +300,7 @@ server_destroy_pane(struct window_pane *wp, int notify)
 		screen_write_start(&ctx, wp, &wp->base);
 		screen_write_scrollregion(&ctx, 0, screen_size_y(ctx.s) - 1);
 		screen_write_cursormove(&ctx, 0, screen_size_y(ctx.s) - 1);
-		screen_write_linefeed(&ctx, 1);
+		screen_write_linefeed(&ctx, 1, 8);
 		memcpy(&gc, &grid_default_cell, sizeof gc);
 		gc.attr |= GRID_ATTR_BRIGHT;
 		screen_write_puts(&ctx, &gc, "Pane is dead");
@@ -349,7 +329,7 @@ server_destroy_session_group(struct session *s)
 	struct session_group	*sg;
 	struct session		*s1;
 
-	if ((sg = session_group_find(s)) == NULL)
+	if ((sg = session_group_contains(s)) == NULL)
 		server_destroy_session(s);
 	else {
 		TAILQ_FOREACH_SAFE(s, &sg->sessions, gentry, s1) {
@@ -422,46 +402,6 @@ server_check_unattached(void)
 		if (options_get_number (s->options, "destroy-unattached"))
 			session_destroy(s);
 	}
-}
-
-void
-server_set_identify(struct client *c)
-{
-	struct timeval	tv;
-	int		delay;
-
-	delay = options_get_number(c->session->options, "display-panes-time");
-	tv.tv_sec = delay / 1000;
-	tv.tv_usec = (delay % 1000) * 1000L;
-
-	if (event_initialized(&c->identify_timer))
-		evtimer_del(&c->identify_timer);
-	evtimer_set(&c->identify_timer, server_callback_identify, c);
-	evtimer_add(&c->identify_timer, &tv);
-
-	c->flags |= CLIENT_IDENTIFY;
-	c->tty.flags |= (TTY_FREEZE|TTY_NOCURSOR);
-	server_redraw_client(c);
-}
-
-void
-server_clear_identify(struct client *c, struct window_pane *wp)
-{
-	if (~c->flags & CLIENT_IDENTIFY)
-		return;
-	c->flags &= ~CLIENT_IDENTIFY;
-
-	if (c->identify_callback != NULL)
-		c->identify_callback(c, wp);
-
-	c->tty.flags &= ~(TTY_FREEZE|TTY_NOCURSOR);
-	server_redraw_client(c);
-}
-
-static void
-server_callback_identify(__unused int fd, __unused short events, void *data)
-{
-	server_clear_identify(data, NULL);
 }
 
 /* Set stdin callback. */

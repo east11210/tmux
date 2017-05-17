@@ -19,11 +19,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#include <err.h>
 #include <errno.h>
 #include <event.h>
 #include <fcntl.h>
-#include <getopt.h>
 #include <langinfo.h>
 #include <locale.h>
 #include <pwd.h>
@@ -42,6 +40,7 @@ struct hooks	*global_hooks;
 
 struct timeval	 start_time;
 const char	*socket_path;
+int		 ptm_fd = -1;
 
 static __dead void	 usage(void);
 static char		*make_label(const char *);
@@ -79,7 +78,7 @@ getshell(void)
 static int
 checkshell(const char *shell)
 {
-	if (shell == NULL || *shell == '\0' || *shell != '/')
+	if (shell == NULL || *shell != '/')
 		return (0);
 	if (areshell(shell))
 		return (0);
@@ -110,18 +109,17 @@ make_label(const char *label)
 {
 	char		*base, resolved[PATH_MAX], *path, *s;
 	struct stat	 sb;
-	u_int		 uid;
+	uid_t		 uid;
 	int		 saved_errno;
 
 	if (label == NULL)
 		label = "default";
-
 	uid = getuid();
 
 	if ((s = getenv("TMUX_TMPDIR")) != NULL && *s != '\0')
-		xasprintf(&base, "%s/tmux-%u", s, uid);
+		xasprintf(&base, "%s/tmux-%ld", s, (long)uid);
 	else
-		xasprintf(&base, "%s/tmux-%u", _PATH_TMP, uid);
+		xasprintf(&base, "%s/tmux-%ld", _PATH_TMP, (long)uid);
 
 	if (mkdir(base, S_IRWXU) != 0 && errno != EEXIST)
 		goto fail;
@@ -140,6 +138,8 @@ make_label(const char *label)
 	if (realpath(base, resolved) == NULL)
 		strlcpy(resolved, base, sizeof resolved);
 	xasprintf(&path, "%s/%s", resolved, label);
+
+	free(base);
 	return (path);
 
 fail:
@@ -260,11 +260,11 @@ main(int argc, char **argv)
 	if (shellcmd != NULL && argc != 0)
 		usage();
 
-#ifdef __OpenBSD__
+	if ((ptm_fd = getptmfd()) == -1)
+		err(1, "getptmfd");
 	if (pledge("stdio rpath wpath cpath flock fattr unix getpw sendfd "
 	    "recvfd proc exec tty ps", NULL) != 0)
 		err(1, "pledge");
-#endif
 
 	/*
 	 * tmux is a UTF-8 terminal, so if TMUX is set, assume UTF-8.

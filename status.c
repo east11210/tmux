@@ -192,17 +192,26 @@ status_timer_start_all(void)
 		status_timer_start(c);
 }
 
+/* Update status cache. */
+void
+status_update_saved(struct session *s)
+{
+	if (!options_get_number(s->options, "status"))
+		s->statusat = -1;
+	else if (options_get_number(s->options, "status-position") == 0)
+		s->statusat = 0;
+	else
+		s->statusat = 1;
+}
+
 /* Get screen line of status line. -1 means off. */
 int
 status_at_line(struct client *c)
 {
 	struct session	*s = c->session;
 
-	if (!options_get_number(s->options, "status"))
-		return (-1);
-
-	if (options_get_number(s->options, "status-position") == 0)
-		return (0);
+	if (s->statusat != 1)
+		return (s->statusat);
 	return (c->tty.sy - 1);
 }
 
@@ -500,14 +509,19 @@ status_replace(struct client *c, struct winlink *wl, const char *fmt, time_t t)
 {
 	struct format_tree	*ft;
 	char			*expanded;
+	u_int			 tag;
 
 	if (fmt == NULL)
 		return (xstrdup(""));
 
-	if (c->flags & CLIENT_STATUSFORCE)
-		ft = format_create(NULL, FORMAT_STATUS|FORMAT_FORCE);
+	if (wl != NULL)
+		tag = FORMAT_WINDOW|wl->window->id;
 	else
-		ft = format_create(NULL, FORMAT_STATUS);
+		tag = FORMAT_NONE;
+	if (c->flags & CLIENT_STATUSFORCE)
+		ft = format_create(c, NULL, tag, FORMAT_STATUS|FORMAT_FORCE);
+	else
+		ft = format_create(c, NULL, tag, FORMAT_STATUS);
 	format_defaults(ft, c, NULL, wl, NULL);
 
 	expanded = format_expand_time(ft, fmt, t);
@@ -548,13 +562,9 @@ status_print(struct client *c, struct winlink *wl, time_t t,
 void
 status_message_set(struct client *c, const char *fmt, ...)
 {
-	struct timeval		 tv;
-	struct message_entry	*msg, *msg1;
-	va_list			 ap;
-	int			 delay;
-	u_int			 limit;
-
-	limit = options_get_number(global_options, "message-limit");
+	struct timeval	tv;
+	va_list		ap;
+	int		delay;
 
 	status_message_clear(c);
 
@@ -562,19 +572,7 @@ status_message_set(struct client *c, const char *fmt, ...)
 	xvasprintf(&c->message_string, fmt, ap);
 	va_end(ap);
 
-	msg = xcalloc(1, sizeof *msg);
-	msg->msg_time = time(NULL);
-	msg->msg_num = c->message_next++;
-	msg->msg = xstrdup(c->message_string);
-	TAILQ_INSERT_TAIL(&c->message_log, msg, entry);
-
-	TAILQ_FOREACH_SAFE(msg, &c->message_log, entry, msg1) {
-		if (msg->msg_num + limit >= c->message_next)
-			break;
-		free(msg->msg);
-		TAILQ_REMOVE(&c->message_log, msg, entry);
-		free(msg);
-	}
+	server_client_add_message(c, "%s", c->message_string);
 
 	delay = options_get_number(c->session->options, "display-time");
 	if (delay > 0) {
@@ -663,9 +661,9 @@ status_prompt_set(struct client *c, const char *msg, const char *input,
 {
 	struct format_tree	*ft;
 	time_t			 t;
-	char			*tmp;
+	char			*tmp, *cp;
 
-	ft = format_create(NULL, 0);
+	ft = format_create(c, NULL, FORMAT_NONE, 0);
 	format_defaults(ft, c, NULL, NULL, NULL);
 
 	t = time(NULL);
@@ -691,6 +689,12 @@ status_prompt_set(struct client *c, const char *msg, const char *input,
 	if (~flags & PROMPT_INCREMENTAL)
 		c->tty.flags |= (TTY_NOCURSOR|TTY_FREEZE);
 	c->flags |= CLIENT_STATUS;
+
+	if ((flags & PROMPT_INCREMENTAL) && *tmp != '\0') {
+		xasprintf(&cp, "=%s", tmp);
+		c->prompt_callbackfn(c->prompt_data, cp, 0);
+		free(cp);
+	}
 
 	free(tmp);
 	format_free(ft);
@@ -726,7 +730,7 @@ status_prompt_update(struct client *c, const char *msg, const char *input)
 	time_t			 t;
 	char			*tmp;
 
-	ft = format_create(NULL, 0);
+	ft = format_create(c, NULL, FORMAT_NONE, 0);
 	format_defaults(ft, c, NULL, NULL, NULL);
 
 	t = time(NULL);
@@ -1499,6 +1503,7 @@ status_prompt_complete(struct session *session, const char *s)
 		out = status_prompt_complete_prefix(list, size);
 	if (out != NULL) {
 		xasprintf(&tmp, "-%c%s%s", copy[1], out, colon);
+		free(out);
 		out = tmp;
 		goto found;
 	}

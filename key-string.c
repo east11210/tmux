@@ -232,7 +232,7 @@ key_string_lookup_string(const char *string)
 const char *
 key_string_lookup_key(key_code key)
 {
-	static char		out[24];
+	static char		out[32];
 	char			tmp[8];
 	u_int			i;
 	struct utf8_data	ud;
@@ -255,6 +255,12 @@ key_string_lookup_key(key_code key)
 		return ("Mouse");
 	if (key == KEYC_DRAGGING)
 		return ("Dragging");
+	if (key == KEYC_MOUSEMOVE_PANE)
+		return ("MouseMovePane");
+	if (key == KEYC_MOUSEMOVE_STATUS)
+		return ("MouseMoveStatus");
+	if (key == KEYC_MOUSEMOVE_BORDER)
+		return ("MouseMoveBorder");
 
 	/*
 	 * Special case: display C-@ as C-Space. Could do this below in

@@ -251,16 +251,13 @@ client_main(struct event_base *base, int argc, char **argv, int flags,
 		 * flag.
 		 */
 		cmdlist = cmd_list_parse(argc, argv, NULL, 0, &cause);
-		if (cmdlist == NULL) {
-			fprintf(stderr, "%s\n", cause);
-			return (1);
+		if (cmdlist != NULL) {
+			TAILQ_FOREACH(cmd, &cmdlist->list, qentry) {
+				if (cmd->entry->flags & CMD_STARTSERVER)
+					cmdflags |= CMD_STARTSERVER;
+			}
+			cmd_list_free(cmdlist);
 		}
-		cmdflags &= ~CMD_STARTSERVER;
-		TAILQ_FOREACH(cmd, &cmdlist->list, qentry) {
-			if (cmd->entry->flags & CMD_STARTSERVER)
-				cmdflags |= CMD_STARTSERVER;
-		}
-		cmd_list_free(cmdlist);
 	}
 
 	/* Create client process structure (starts logging). */
@@ -289,7 +286,6 @@ client_main(struct event_base *base, int argc, char **argv, int flags,
 	if ((ttynam = ttyname(STDIN_FILENO)) == NULL)
 		ttynam = "";
 
-#ifdef __OpenBSD__
 	/*
 	 * Drop privileges for client. "proc exec" is needed for -c and for
 	 * locking (which uses system(3)).
@@ -301,9 +297,10 @@ client_main(struct event_base *base, int argc, char **argv, int flags,
 	 */
 	if (pledge("stdio unix sendfd proc exec tty", NULL) != 0)
 		fatal("pledge failed");
-#endif
 
 	/* Free stuff that is not used in the client. */
+	if (ptm_fd != -1)
+		close(ptm_fd);
 	options_free(global_options);
 	options_free(global_s_options);
 	options_free(global_w_options);
@@ -314,8 +311,11 @@ client_main(struct event_base *base, int argc, char **argv, int flags,
 	event_set(&client_stdin, STDIN_FILENO, EV_READ|EV_PERSIST,
 	    client_stdin_callback, NULL);
 	if (client_flags & CLIENT_CONTROLCONTROL) {
-		if (tcgetattr(STDIN_FILENO, &saved_tio) != 0)
-			fatal("tcgetattr failed");
+		if (tcgetattr(STDIN_FILENO, &saved_tio) != 0) {
+			fprintf(stderr, "tcgetattr failed: %s\n",
+			    strerror(errno));
+			return (1);
+		}
 		cfmakeraw(&tio);
 		tio.c_iflag = ICRNL|IXANY;
 		tio.c_oflag = OPOST|ONLCR;
@@ -558,7 +558,6 @@ client_dispatch_wait(struct imsg *imsg, const char *shellcmd)
 	struct msg_stdout_data	 stdoutdata;
 	struct msg_stderr_data	 stderrdata;
 	int			 retval;
-#ifdef __OpenBSD__
 	static int		 pledge_applied;
 
 	/*
@@ -572,7 +571,6 @@ client_dispatch_wait(struct imsg *imsg, const char *shellcmd)
 			fatal("pledge failed");
 		pledge_applied = 1;
 	};
-#endif
 
 	data = imsg->data;
 	datalen = imsg->hdr.len - IMSG_HEADER_SIZE;

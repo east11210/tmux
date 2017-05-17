@@ -84,7 +84,7 @@ key_bindings_unref_table(struct key_table *table)
 }
 
 void
-key_bindings_add(const char *name, key_code key, int can_repeat,
+key_bindings_add(const char *name, key_code key, int repeat,
     struct cmd_list *cmdlist)
 {
 	struct key_table	*table;
@@ -92,7 +92,7 @@ key_bindings_add(const char *name, key_code key, int can_repeat,
 
 	table = key_bindings_get_table(name, 1);
 
-	bd_find.key = key;
+	bd_find.key = (key & ~KEYC_XTERM);
 	bd = RB_FIND(key_bindings, &table->key_bindings, &bd_find);
 	if (bd != NULL) {
 		RB_REMOVE(key_bindings, &table->key_bindings, bd);
@@ -100,11 +100,12 @@ key_bindings_add(const char *name, key_code key, int can_repeat,
 		free(bd);
 	}
 
-	bd = xmalloc(sizeof *bd);
+	bd = xcalloc(1, sizeof *bd);
 	bd->key = key;
 	RB_INSERT(key_bindings, &table->key_bindings, bd);
 
-	bd->can_repeat = can_repeat;
+	if (repeat)
+		bd->flags |= KEY_BINDING_REPEAT;
 	bd->cmdlist = cmdlist;
 }
 
@@ -118,7 +119,7 @@ key_bindings_remove(const char *name, key_code key)
 	if (table == NULL)
 		return;
 
-	bd_find.key = key;
+	bd_find.key = (key & ~KEYC_XTERM);
 	bd = RB_FIND(key_bindings, &table->key_bindings, &bd_find);
 	if (bd == NULL)
 		return;
@@ -260,6 +261,8 @@ key_bindings_init(void)
 		"bind -Tcopy-mode n send -X search-again",
 		"bind -Tcopy-mode q send -X cancel",
 		"bind -Tcopy-mode t command-prompt -1p'jump to forward' 'send -X jump-to-forward \"%%%\"'",
+		"bind -Tcopy-mode Home send -X start-of-line",
+		"bind -Tcopy-mode End send -X end-of-line",
 		"bind -Tcopy-mode MouseDown1Pane select-pane",
 		"bind -Tcopy-mode MouseDrag1Pane select-pane\\; send -X begin-selection",
 		"bind -Tcopy-mode MouseDragEnd1Pane send -X copy-selection-and-cancel",
@@ -383,7 +386,7 @@ key_bindings_init(void)
 	for (i = 0; i < nitems(defaults); i++) {
 		cmdlist = cmd_string_parse(defaults[i], "<default>", i, &cause);
 		if (cmdlist == NULL)
-			fatalx("bad default key");
+			fatalx("bad default key: %s", defaults[i]);
 		cmdq_append(NULL, cmdq_get_command(cmdlist, NULL, NULL, 0));
 		cmd_list_free(cmdlist);
 	}
@@ -397,11 +400,12 @@ key_bindings_read_only(struct cmdq_item *item, __unused void *data)
 }
 
 void
-key_bindings_dispatch(struct key_binding *bd, struct client *c,
-    struct mouse_event *m, struct cmd_find_state *fs)
+key_bindings_dispatch(struct key_binding *bd, struct cmdq_item *item,
+    struct client *c, struct mouse_event *m, struct cmd_find_state *fs)
 {
-	struct cmd	*cmd;
-	int		 readonly;
+	struct cmd		*cmd;
+	struct cmdq_item	*new_item;
+	int			 readonly;
 
 	readonly = 1;
 	TAILQ_FOREACH(cmd, &bd->cmdlist->list, qentry) {
@@ -409,7 +413,14 @@ key_bindings_dispatch(struct key_binding *bd, struct client *c,
 			readonly = 0;
 	}
 	if (!readonly && (c->flags & CLIENT_READONLY))
-		cmdq_append(c, cmdq_get_callback(key_bindings_read_only, NULL));
+		new_item = cmdq_get_callback(key_bindings_read_only, NULL);
+	else {
+		new_item = cmdq_get_command(bd->cmdlist, fs, m, 0);
+		if (bd->flags & KEY_BINDING_REPEAT)
+			new_item->shared->flags |= CMDQ_SHARED_REPEAT;
+	}
+	if (item != NULL)
+		cmdq_insert_after(item, new_item);
 	else
-		cmdq_append(c, cmdq_get_command(bd->cmdlist, fs, m, 0));
+		cmdq_append(c, new_item);
 }

@@ -280,7 +280,7 @@ screen_redraw_make_pane_status(struct client *c, struct window *w,
 
 	fmt = options_get_string(w->options, "pane-border-format");
 
-	ft = format_create(NULL, 0);
+	ft = format_create(c, NULL, FORMAT_PANE|wp->id, 0);
 	format_defaults(ft, c, NULL, NULL, wp);
 
 	memcpy(&old, &wp->status_screen, sizeof old);
@@ -422,6 +422,9 @@ screen_redraw_pane(struct client *c, struct window_pane *wp)
 	yoff = wp->yoff;
 	if (status_at_line(c) == 0)
 		yoff++;
+
+	log_debug("%s: redraw pane %%%u (at %u,%u)", c->name, wp->id,
+	    wp->xoff, yoff);
 
 	for (i = 0; i < wp->sy; i++)
 		tty_draw_pane(&c->tty, wp, i, wp->xoff, yoff);

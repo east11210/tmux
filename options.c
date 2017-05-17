@@ -170,22 +170,11 @@ struct options_entry *
 options_default(struct options *oo, const struct options_table_entry *oe)
 {
 	struct options_entry	*o;
-	char			*cp, *copy, *next;
-	u_int			 idx = 0;
 
 	o = options_empty(oo, oe);
-
-	if (oe->type == OPTIONS_TABLE_ARRAY) {
-		copy = cp = xstrdup(oe->default_str);
-		while ((next = strsep(&cp, ",")) != NULL) {
-			options_array_set(o, idx, next);
-			idx++;
-		}
-		free(copy);
-		return (o);
-	}
-
-	if (oe->type == OPTIONS_TABLE_STRING)
+	if (oe->type == OPTIONS_TABLE_ARRAY)
+		options_array_assign(o, oe->default_str);
+	else if (oe->type == OPTIONS_TABLE_STRING)
 		o->string = xstrdup(oe->default_str);
 	else if (oe->type == OPTIONS_TABLE_STYLE) {
 		memcpy(&o->style, &grid_default_cell, sizeof o->style);
@@ -242,6 +231,13 @@ options_table_entry(struct options_entry *o)
 	return (o->tableentry);
 }
 
+void
+options_array_clear(struct options_entry *o)
+{
+	if (OPTIONS_IS_ARRAY(o))
+		o->arraysize = 0;
+}
+
 const char *
 options_array_get(struct options_entry *o, u_int idx)
 {
@@ -253,9 +249,11 @@ options_array_get(struct options_entry *o, u_int idx)
 }
 
 int
-options_array_set(struct options_entry *o, u_int idx, const char *value)
+options_array_set(struct options_entry *o, u_int idx, const char *value,
+    int append)
 {
-	u_int	i;
+	char	*new;
+	u_int	 i;
 
 	if (!OPTIONS_IS_ARRAY(o))
 		return (-1);
@@ -268,12 +266,17 @@ options_array_set(struct options_entry *o, u_int idx, const char *value)
 			o->array[i] = NULL;
 		o->arraysize = idx + 1;
 	}
-	if (o->array[idx] != NULL)
-		free((void *)o->array[idx]);
-	if (value != NULL)
-		o->array[idx] = xstrdup(value);
-	else
-		o->array[idx] = NULL;
+
+	new = NULL;
+	if (value != NULL) {
+		if (o->array[idx] != NULL && append)
+			xasprintf(&new, "%s%s", o->array[idx], value);
+		else
+			new = xstrdup(value);
+	}
+
+	free((void *)o->array[idx]);
+	o->array[idx] = new;
 	return (0);
 }
 
@@ -287,6 +290,32 @@ options_array_size(struct options_entry *o, u_int *size)
 	return (0);
 }
 
+void
+options_array_assign(struct options_entry *o, const char *s)
+{
+	const char	*separator;
+	char		*copy, *next, *string;
+	u_int		 i;
+
+	separator = o->tableentry->separator;
+	if (separator == NULL)
+		separator = " ,";
+
+	copy = string = xstrdup(s);
+	while ((next = strsep(&string, separator)) != NULL) {
+		if (*next == '\0')
+			continue;
+		for (i = 0; i < OPTIONS_ARRAY_LIMIT; i++) {
+			if (i >= o->arraysize || o->array[i] == NULL)
+				break;
+		}
+		if (i == OPTIONS_ARRAY_LIMIT)
+			break;
+		options_array_set(o, i, next, 0);
+	}
+	free(copy);
+}
+
 int
 options_isstring(struct options_entry *o)
 {
@@ -296,7 +325,7 @@ options_isstring(struct options_entry *o)
 }
 
 const char *
-options_tostring(struct options_entry *o, int idx)
+options_tostring(struct options_entry *o, int idx, int numeric)
 {
 	static char	 s[1024];
 	const char	*tmp;
@@ -326,7 +355,10 @@ options_tostring(struct options_entry *o, int idx)
 			tmp = attributes_tostring(o->number);
 			break;
 		case OPTIONS_TABLE_FLAG:
-			tmp = (o->number ? "on" : "off");
+			if (numeric)
+				xsnprintf(s, sizeof s, "%lld", o->number);
+			else
+				tmp = (o->number ? "on" : "off");
 			break;
 		case OPTIONS_TABLE_CHOICE:
 			tmp = o->tableentry->choices[o->number];
@@ -384,12 +416,6 @@ options_parse_get(struct options *oo, const char *s, int *idx, int only)
 	else
 		o = options_get(oo, name);
 	free(name);
-	if (o != NULL) {
-		if (OPTIONS_IS_ARRAY(o) && *idx == -1)
-			return (NULL);
-		if (!OPTIONS_IS_ARRAY(o) && *idx != -1)
-			return (NULL);
-	}
 	return (o);
 }
 
@@ -401,11 +427,13 @@ options_match(const char *s, int *idx, int* ambiguous)
 	size_t					 namelen;
 
 	name = options_parse(s, idx);
+	if (name == NULL)
+		return (NULL);
 	namelen = strlen(name);
 
 	if (*name == '@') {
 		*ambiguous = 0;
-		return (xstrdup(name));
+		return (name);
 	}
 
 	found = NULL;
@@ -447,12 +475,6 @@ options_match_get(struct options *oo, const char *s, int *idx, int only,
 	else
 		o = options_get(oo, name);
 	free(name);
-	if (o != NULL) {
-		if (OPTIONS_IS_ARRAY(o) && *idx == -1)
-			return (NULL);
-		if (!OPTIONS_IS_ARRAY(o) && *idx != -1)
-			return (NULL);
-	}
 	return (o);
 }
 
