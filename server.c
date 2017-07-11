@@ -150,7 +150,7 @@ server_start(struct event_base *base, int lockfd, char *lockfile)
 	}
 	close(pair[0]);
 
-	if (log_get_level() > 3)
+	if (log_get_level() > 1)
 		tty_create_log();
 	if (pledge("stdio rpath wpath cpath fattr unix getpw recvfd proc exec "
 	    "tty ps", NULL) != 0)
@@ -248,7 +248,7 @@ server_send_exit(void)
 	}
 
 	RB_FOREACH_SAFE(s, sessions, &sessions, s1)
-		session_destroy(s);
+		session_destroy(s, __func__);
 }
 
 /* Update socket execute permissions based on whether sessions are attached. */
@@ -346,6 +346,7 @@ server_signal(int sig)
 {
 	int	fd;
 
+	log_debug("%s: %s", __func__, strsignal(sig));
 	switch (sig) {
 	case SIGTERM:
 		server_exit = 1;
@@ -363,6 +364,9 @@ server_signal(int sig)
 			server_update_socket();
 		}
 		server_add_accept(0);
+		break;
+	case SIGUSR2:
+		proc_toggle_log(server_proc);
 		break;
 	}
 }
@@ -402,7 +406,12 @@ server_child_exited(pid_t pid, int status)
 		TAILQ_FOREACH(wp, &w->panes, entry) {
 			if (wp->pid == pid) {
 				wp->status = status;
-				server_destroy_pane(wp, 1);
+
+				log_debug("%%%u exited", wp->id);
+				wp->flags |= PANE_EXITED;
+
+				if (window_pane_destroy_ready(wp))
+					server_destroy_pane(wp, 1);
 				break;
 			}
 		}

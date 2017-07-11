@@ -27,7 +27,8 @@
 static const char *window_copy_key_table(struct window_pane *);
 static void	window_copy_command(struct window_pane *, struct client *,
 		    struct session *, struct args *, struct mouse_event *);
-static struct screen *window_copy_init(struct window_pane *);
+static struct screen *window_copy_init(struct window_pane *,
+		    struct cmd_find_state *, struct args *);
 static void	window_copy_free(struct window_pane *);
 static int	window_copy_pagedown(struct window_pane *, int);
 static void	window_copy_next_paragraph(struct window_pane *);
@@ -187,7 +188,8 @@ struct window_copy_mode_data {
 };
 
 static struct screen *
-window_copy_init(struct window_pane *wp)
+window_copy_init(struct window_pane *wp, __unused struct cmd_find_state *fs,
+    __unused struct args *args)
 {
 	struct window_copy_mode_data	*data;
 	struct screen			*s;
@@ -1458,7 +1460,7 @@ window_copy_adjust_selection(struct window_pane *wp, u_int *selx, u_int *sely)
 	}
 
 	*selx = sx;
-	*sely = screen_hsize(s) + sy;
+	*sely = sy;
 	return (relpos);
 }
 
@@ -1627,10 +1629,11 @@ window_copy_copy_buffer(struct window_pane *wp, const char *bufname, void *buf,
 {
 	struct screen_write_ctx	ctx;
 
-	if (options_get_number(global_options, "set-clipboard")) {
+	if (options_get_number(global_options, "set-clipboard") != 0) {
 		screen_write_start(&ctx, wp, NULL);
 		screen_write_setselection(&ctx, buf, len);
 		screen_write_stop(&ctx);
+		notify_pane("pane-set-clipboard", wp);
 	}
 
 	if (paste_set(buf, len, bufname, NULL) != 0)
@@ -1684,10 +1687,11 @@ window_copy_append_selection(struct window_pane *wp, const char *bufname)
 	if (buf == NULL)
 		return;
 
-	if (options_get_number(global_options, "set-clipboard")) {
+	if (options_get_number(global_options, "set-clipboard") != 0) {
 		screen_write_start(&ctx, wp, NULL);
 		screen_write_setselection(&ctx, buf, len);
 		screen_write_stop(&ctx);
+		notify_pane("pane-set-clipboard", wp);
 	}
 
 	if (bufname == NULL || *bufname == '\0')

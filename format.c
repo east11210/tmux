@@ -17,13 +17,11 @@
  */
 
 #include <sys/types.h>
-#include <sys/param.h>
 #include <sys/wait.h>
 
-#include <ctype.h>
 #include <errno.h>
+#include <fnmatch.h>
 #include <libgen.h>
-#include <netdb.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -205,7 +203,7 @@ format_job_update(struct job *job)
 
 	log_debug("%s: %p %s: %s", __func__, fj, fj->cmd, fj->out);
 
-	t = time (NULL);
+	t = time(NULL);
 	if (fj->status && fj->last != t) {
 		if (fj->client != NULL)
 			server_status_client(fj->client);
@@ -529,7 +527,7 @@ format_cb_current_command(struct format_tree *ft, struct format_entry *fe)
 }
 
 /* Callback for pane_current_path. */
-void
+static void
 format_cb_current_path(struct format_tree *ft, struct format_entry *fe)
 {
 	struct window_pane	*wp = ft->wp;
@@ -856,7 +854,7 @@ format_choose(char *s, char **left, char **right)
 }
 
 /* Is this true? */
-static int
+int
 format_true(const char *s)
 {
 	if (s != NULL && *s != '\0' && (s[0] != '0' || s[1] != '\0'))
@@ -864,19 +862,17 @@ format_true(const char *s)
 	return (0);
 }
 
-/*
- * Replace a key/value pair in buffer. #{blah} is expanded directly,
- * #{?blah,a,b} is replace with a if blah exists and is nonzero else b.
- */
+/* Replace a key. */
 static int
 format_replace(struct format_tree *ft, const char *key, size_t keylen,
     char **buf, size_t *len, size_t *off)
 {
-	char		*copy, *copy0, *endptr, *ptr, *found, *new, *value;
-	char		*from = NULL, *to = NULL, *left, *right;
-	size_t		 valuelen, newlen, fromlen, tolen, used;
-	long		 limit = 0;
-	int		 modifiers = 0, compare = 0;
+	struct window_pane	*wp = ft->wp;
+	char			*copy, *copy0, *endptr, *ptr, *found, *new;
+	char			*value, *from = NULL, *to = NULL, *left, *right;
+	size_t			 valuelen, newlen, fromlen, tolen, used;
+	long			 limit = 0;
+	int			 modifiers = 0, compare = 0, search = 0;
 
 	/* Make a copy of the key. */
 	copy0 = copy = xmalloc(keylen + 1);
@@ -885,6 +881,30 @@ format_replace(struct format_tree *ft, const char *key, size_t keylen,
 
 	/* Is there a length limit or whatnot? */
 	switch (copy[0]) {
+	case 'm':
+		if (copy[1] != ':')
+			break;
+		compare = -2;
+		copy += 2;
+		break;
+	case 'C':
+		if (copy[1] != ':')
+			break;
+		search = 1;
+		copy += 2;
+		break;
+	case '|':
+		if (copy[1] != '|' || copy[2] != ':')
+			break;
+		compare = -3;
+		copy += 3;
+		break;
+	case '&':
+		if (copy[1] != '&' || copy[2] != ':')
+			break;
+		compare = -4;
+		copy += 3;
+		break;
 	case '!':
 		if (copy[1] == '=' && copy[2] == ':') {
 			compare = -1;
@@ -950,15 +970,29 @@ format_replace(struct format_tree *ft, const char *key, size_t keylen,
 	}
 
 	/* Is this a comparison or a conditional? */
-	if (compare != 0) {
+	if (search) {
+		/* Search in pane. */
+		if (wp == NULL)
+			value = xstrdup("0");
+		else
+			xasprintf(&value, "%u", window_pane_search(wp, copy));
+	} else if (compare != 0) {
 		/* Comparison: compare comma-separated left and right. */
 		if (format_choose(copy, &left, &right) != 0)
 			goto fail;
 		left = format_expand(ft, left);
 		right = format_expand(ft, right);
-		if (compare == 1 && strcmp(left, right) == 0)
+		if (compare == -3 &&
+		    (format_true(left) || format_true(right)))
+			value = xstrdup("1");
+		else if (compare == -4 &&
+		    (format_true(left) && format_true(right)))
+			value = xstrdup("1");
+		else if (compare == 1 && strcmp(left, right) == 0)
 			value = xstrdup("1");
 		else if (compare == -1 && strcmp(left, right) != 0)
+			value = xstrdup("1");
+		else if (compare == -2 && fnmatch(left, right, 0) == 0)
 			value = xstrdup("1");
 		else
 			value = xstrdup("0");
@@ -1375,6 +1409,7 @@ format_defaults_pane(struct format_tree *ft, struct window_pane *wp)
 	format_add(ft, "pane_id", "%%%u", wp->id);
 	format_add(ft, "pane_active", "%d", wp == wp->window->active);
 	format_add(ft, "pane_input_off", "%d", !!(wp->flags & PANE_INPUTOFF));
+	format_add(ft, "pane_pipe", "%d", wp->pipe_fd != -1);
 
 	status = wp->status;
 	if (wp->fd == -1 && WIFEXITED(status))

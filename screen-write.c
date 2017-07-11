@@ -48,7 +48,7 @@ struct screen_write_collect_item {
 
 	struct grid_cell	 gc;
 
-	TAILQ_ENTRY (screen_write_collect_item) entry;
+	TAILQ_ENTRY(screen_write_collect_item) entry;
 };
 struct screen_write_collect_line {
 	TAILQ_HEAD(, screen_write_collect_item) items;
@@ -362,6 +362,9 @@ screen_write_copy(struct screen_write_ctx *ctx, struct screen *src, u_int px,
 	struct grid_cell	 gc;
 	u_int		 	 xx, yy, cx, cy, b;
 
+	if (nx == 0 || ny == 0)
+		return;
+
 	cx = s->cx;
 	cy = s->cy;
 
@@ -381,6 +384,146 @@ screen_write_copy(struct screen_write_ctx *ctx, struct screen *src, u_int px,
 
 		cy++;
 		screen_write_cursormove(ctx, cx, cy);
+	}
+}
+
+/* Draw a horizontal line on screen. */
+void
+screen_write_hline(struct screen_write_ctx *ctx, u_int nx, int left, int right)
+{
+	struct screen		*s = ctx->s;
+	struct grid_cell	 gc;
+	u_int			 cx, cy, i;
+
+	cx = s->cx;
+	cy = s->cy;
+
+	memcpy(&gc, &grid_default_cell, sizeof gc);
+	gc.attr |= GRID_ATTR_CHARSET;
+
+	screen_write_putc(ctx, &gc, left ? 't' : 'q');
+	for (i = 1; i < nx - 1; i++)
+		screen_write_putc(ctx, &gc, 'q');
+	screen_write_putc(ctx, &gc, right ? 'u' : 'q');
+
+	screen_write_cursormove(ctx, cx, cy);
+}
+
+/* Draw a horizontal line on screen. */
+void
+screen_write_vline(struct screen_write_ctx *ctx, u_int ny, int top, int bottom) 
+{
+	struct screen		*s = ctx->s;
+	struct grid_cell	 gc;
+	u_int			 cx, cy, i;
+
+	cx = s->cx;
+	cy = s->cy;
+
+	memcpy(&gc, &grid_default_cell, sizeof gc);
+	gc.attr |= GRID_ATTR_CHARSET;
+
+	screen_write_putc(ctx, &gc, top ? 'w' : 'x');
+	for (i = 1; i < ny - 1; i++) {
+		screen_write_cursormove(ctx, cx, cy + i);
+		screen_write_putc(ctx, &gc, 'x');
+	}
+	screen_write_cursormove(ctx, cx, cy + ny);
+	screen_write_putc(ctx, &gc, bottom ? 'v' : 'x');
+
+	screen_write_cursormove(ctx, cx, cy);
+}
+
+/* Draw a box on screen. */
+void
+screen_write_box(struct screen_write_ctx *ctx, u_int nx, u_int ny)
+{
+	struct screen		*s = ctx->s;
+	struct grid_cell	 gc;
+	u_int			 cx, cy, i;
+
+	cx = s->cx;
+	cy = s->cy;
+
+	memcpy(&gc, &grid_default_cell, sizeof gc);
+	gc.attr |= GRID_ATTR_CHARSET;
+
+	screen_write_putc(ctx, &gc, 'l');
+	for (i = 1; i < nx - 1; i++)
+		screen_write_putc(ctx, &gc, 'q');
+	screen_write_putc(ctx, &gc, 'k');
+
+	screen_write_cursormove(ctx, cx, cy + ny - 1);
+	screen_write_putc(ctx, &gc, 'm');
+	for (i = 1; i < nx - 1; i++)
+		screen_write_putc(ctx, &gc, 'q');
+	screen_write_putc(ctx, &gc, 'j');
+
+	for (i = 1; i < ny - 1; i++) {
+		screen_write_cursormove(ctx, cx, cy + i);
+		screen_write_putc(ctx, &gc, 'x');
+	}
+	for (i = 1; i < ny - 1; i++) {
+		screen_write_cursormove(ctx, cx + nx - 1, cy + i);
+		screen_write_putc(ctx, &gc, 'x');
+	}
+
+	screen_write_cursormove(ctx, cx, cy);
+}
+
+/* Write a preview version of a window. */
+void
+screen_write_preview(struct screen_write_ctx *ctx, struct screen *src, u_int nx,
+    u_int ny)
+{
+	struct screen		*s = ctx->s;
+	struct grid_cell	 gc;
+	u_int			 cx, cy, px, py;
+
+	cx = s->cx;
+	cy = s->cy;
+
+	/*
+	 * If the cursor is on, pick the area around the cursor, otherwise use
+	 * the top left.
+	 */
+	if (src->mode & MODE_CURSOR) {
+		px = src->cx;
+		if (px < nx / 3)
+			px = 0;
+		else
+			px = px - nx / 3;
+		if (px + nx > screen_size_x(src)) {
+			if (nx > screen_size_x(src))
+				px = 0;
+			else
+				px = screen_size_x(src) - nx;
+		}
+		py = src->cy;
+		if (py < ny / 3)
+			py = 0;
+		else
+			py = py - ny / 3;
+		if (py + ny > screen_size_y(src)) {
+			if (ny > screen_size_y(src))
+				py = 0;
+			else
+				py = screen_size_y(src) - ny;
+		}
+	} else {
+		px = 0;
+		py = 0;
+	}
+
+	screen_write_copy(ctx, src, px, src->grid->hsize + py, nx, ny, NULL,
+	    NULL);
+
+	if (src->mode & MODE_CURSOR) {
+		grid_view_get_cell(src->grid, src->cx, src->cy, &gc);
+		gc.attr |= GRID_ATTR_REVERSE;
+		screen_write_cursormove(ctx, cx + (src->cx - px),
+		    cy + (src->cy - py));
+		screen_write_cell(ctx, &gc);
 	}
 }
 
@@ -1221,8 +1364,10 @@ screen_write_cell(struct screen_write_ctx *ctx, const struct grid_cell *gc)
 
 	/* Check this will fit on the current line and wrap if not. */
 	if ((s->mode & MODE_WRAP) && s->cx > sx - width) {
+		log_debug("%s: wrapped at %u,%u", __func__, s->cx, s->cy);
 		screen_write_linefeed(ctx, 1, 8);
 		s->cx = 0;
+		screen_write_collect_flush(ctx, 1);
 	}
 
 	/* Sanity check cursor position. */
@@ -1272,7 +1417,7 @@ screen_write_cell(struct screen_write_ctx *ctx, const struct grid_cell *gc)
 		}
 	}
 
-	/* Update the selection the flag and set the cell. */
+	/* Update the selected flag and set the cell. */
 	selected = screen_check_selection(s, s->cx, s->cy);
 	if (selected && (~gc->flags & GRID_FLAG_SELECTED)) {
 		memcpy(&tmp_gc, gc, sizeof tmp_gc);

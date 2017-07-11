@@ -387,6 +387,23 @@ window_destroy(struct window *w)
 	free(w);
 }
 
+int
+window_pane_destroy_ready(struct window_pane *wp)
+{
+	int	n;
+
+	if (wp->pipe_fd != -1) {
+		if (EVBUFFER_LENGTH(wp->pipe_event->output) != 0)
+			return (0);
+		if (ioctl(wp->fd, FIONREAD, &n) != -1 && n > 0)
+			return (0);
+	}
+
+	if (~wp->flags & PANE_EXITED)
+		return (0);
+	return (1);
+}
+
 void
 window_add_ref(struct window *w, const char *from)
 {
@@ -408,7 +425,7 @@ void
 window_set_name(struct window *w, const char *new_name)
 {
 	free(w->name);
-	w->name = xstrdup(new_name);
+	utf8_stravis(&w->name, new_name, VIS_OCTAL|VIS_CSTYLE|VIS_TAB|VIS_NL);
 	notify_window("window-renamed", w);
 }
 
@@ -800,8 +817,8 @@ window_pane_create(struct window *w, u_int sx, u_int sy, u_int hlimit)
 	wp->xoff = 0;
 	wp->yoff = 0;
 
-	wp->sx = sx;
-	wp->sy = sy;
+	wp->sx = wp->osx = sx;
+	wp->sy = wp->osx = sy;
 
 	wp->pipe_fd = -1;
 	wp->pipe_off = 0;
@@ -1014,7 +1031,11 @@ window_pane_error_callback(__unused struct bufferevent *bufev,
 {
 	struct window_pane *wp = data;
 
-	server_destroy_pane(wp, 1);
+	log_debug("%%%u error", wp->id);
+	wp->flags |= PANE_EXITED;
+
+	if (window_pane_destroy_ready(wp))
+		server_destroy_pane(wp, 1);
 }
 
 void
@@ -1186,7 +1207,8 @@ window_pane_mode_timer(__unused int fd, __unused short events, void *arg)
 }
 
 int
-window_pane_set_mode(struct window_pane *wp, const struct window_mode *mode)
+window_pane_set_mode(struct window_pane *wp, const struct window_mode *mode,
+    struct cmd_find_state *fs, struct args *args)
 {
 	struct screen	*s;
 	struct timeval	 tv = { .tv_sec = 10 };
@@ -1199,7 +1221,7 @@ window_pane_set_mode(struct window_pane *wp, const struct window_mode *mode)
 	evtimer_set(&wp->modetimer, window_pane_mode_timer, wp);
 	evtimer_add(&wp->modetimer, &tv);
 
-	if ((s = wp->mode->init(wp)) != NULL)
+	if ((s = wp->mode->init(wp, fs, args)) != NULL)
 		wp->screen = s;
 	wp->flags |= (PANE_REDRAW|PANE_CHANGED);
 
@@ -1239,7 +1261,7 @@ window_pane_key(struct window_pane *wp, struct client *c, struct session *s,
 	if (wp->mode != NULL) {
 		wp->modelast = time(NULL);
 		if (wp->mode->key != NULL)
-			wp->mode->key(wp, c, s, key, m);
+			wp->mode->key(wp, c, s, (key & ~KEYC_XTERM), m);
 		return;
 	}
 
@@ -1282,30 +1304,28 @@ window_pane_visible(struct window_pane *wp)
 	return (!window_pane_outside(wp));
 }
 
-char *
-window_pane_search(struct window_pane *wp, const char *searchstr,
-    u_int *lineno)
+u_int
+window_pane_search(struct window_pane *wp, const char *searchstr)
 {
 	struct screen	*s = &wp->base;
-	char		*newsearchstr, *line, *msg;
+	char		*newsearchstr, *line;
 	u_int		 i;
 
-	msg = NULL;
 	xasprintf(&newsearchstr, "*%s*", searchstr);
 
 	for (i = 0; i < screen_size_y(s); i++) {
 		line = grid_view_string_cells(s->grid, 0, i, screen_size_x(s));
 		if (fnmatch(newsearchstr, line, 0) == 0) {
-			msg = line;
-			if (lineno != NULL)
-				*lineno = i;
+			free(line);
 			break;
 		}
 		free(line);
 	}
 
 	free(newsearchstr);
-	return (msg);
+	if (i == screen_size_y(s))
+		return (0);
+	return (i + 1);
 }
 
 /* Get MRU pane from a list. */
