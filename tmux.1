@@ -1358,6 +1358,7 @@ the end of the visible pane.
 The default is to capture only the visible contents of the pane.
 .It Xo
 .Ic choose-client
+.Op Fl F Ar format
 .Op Fl f Ar filter
 .Op Fl O Ar sort-order
 .Op Fl t Ar target-pane
@@ -1405,10 +1406,13 @@ or
 .Ql activity .
 .Fl f
 specifies an initial filter.
+.Fl F
+specifies the format for each item in the list.
 This command works only if at least one client is attached.
 .It Xo
 .Ic choose-tree
 .Op Fl sw
+.Op Fl F Ar format
 .Op Fl f Ar filter
 .Op Fl O Ar sort-order
 .Op Fl t Ar target-pane
@@ -1456,6 +1460,8 @@ or
 .Ql time .
 .Fl f
 specifies an initial filter.
+.Fl F
+specifies the format for each item in the tree.
 This command works only if at least one client is attached.
 .It Xo
 .Ic display-panes
@@ -1838,6 +1844,7 @@ and unzoomed (its normal position in the layout).
 begins mouse resizing (only valid if bound to a mouse key binding, see
 .Sx MOUSE SUPPORT ) .
 .It Xo Ic respawn-pane
+.Op Fl c Ar start-directory
 .Op Fl k
 .Op Fl t Ar target-pane
 .Op Ar shell-command
@@ -1852,7 +1859,10 @@ is not given, the command used when the pane was created is executed.
 The pane must be already inactive, unless
 .Fl k
 is given, in which case any existing command is killed.
+.Fl c
+specifies a new working directory for the pane.
 .It Xo Ic respawn-window
+.Op Fl c Ar start-directory
 .Op Fl k
 .Op Fl t Ar target-window
 .Op Ar shell-command
@@ -1867,6 +1877,8 @@ is not given, the command used when the window was created is executed.
 The window must be already inactive, unless
 .Fl k
 is given, in which case any existing command is killed.
+.Fl c
+specifies a new working directory for the window.
 .It Xo Ic rotate-window
 .Op Fl DU
 .Op Fl t Ar target-window
@@ -2513,6 +2525,25 @@ before interpretation.
 .Pp
 Available session options are:
 .Bl -tag -width Ds
+.It Xo Ic activity-action
+.Op Ic any | none | current | other
+.Xc
+Set action on window activity when
+.Ic monitor-activity
+is on.
+.Ic any
+means activity in any window linked to a session causes a bell or message
+(depending on
+.Ic visual-activity )
+in the current window of that session,
+.Ic none
+means all activity is ignored (equivalent to
+.Ic monitor-activity
+being off),
+.Ic current
+means only activity in windows other than the current window are ignored and
+.Ic other
+means activity in the current window is ignored but not those in other windows.
 .It Ic assume-paste-time Ar milliseconds
 If keys are entered faster than one in
 .Ar milliseconds ,
@@ -2528,20 +2559,8 @@ The default is zero.
 .Op Ic any | none | current | other
 .Xc
 Set action on window bell.
-.Ic any
-means a bell in any window linked to a session causes a bell in the current
-window of that session,
-.Ic none
-means all bells are ignored,
-.Ic current
-means only bells in windows other than the current window are ignored and
-.Ic other
-means bells in the current window are ignored but not those in other windows.
-.It Xo Ic bell-on-alert
-.Op Ic on | off
-.Xc
-If on, ring the terminal bell when an alert
-occurs.
+The values are the same as those for
+.Ic activity-action .
 .It Ic default-command Ar shell-command
 Set the command used for new windows (if not specified when the window is
 created) to
@@ -2757,6 +2776,14 @@ is on.
 Formats are expanded, see the
 .Sx FORMATS
 section.
+.It Xo Ic silence-action
+.Op Ic any | none | current | other
+.Xc
+Set action on window silence when
+.Ic monitor-silence
+is on.
+The values are the same as those for
+.Ic activity-action .
 .It Xo Ic status
 .Op Ic on | off
 .Xc
@@ -2882,26 +2909,30 @@ set -s user-keys[0] '\e[5;30012~'
 bind User0 resize-pane -L 3
 .Ed
 .It Xo Ic visual-activity
-.Op Ic on | off
+.Op Ic on | off | both
 .Xc
-If on, display a status line message when activity occurs in a window
-for which the
+If on, display a message instead of sending a bell when activity occurs in a
+window for which the
 .Ic monitor-activity
 window option is enabled.
+If set to both, a bell and a message are produced.
 .It Xo Ic visual-bell
-.Op Ic on | off
+.Op Ic on | off | both
 .Xc
-If this option is on, a message is shown on a bell instead of it being passed
-through to the terminal (which normally makes a sound).
+If on, a message is shown on a bell instead of it being passed through to the
+terminal (which normally makes a sound).
+If set to both, a bell and a message are produced.
 Also see the
 .Ic bell-action
 option.
 .It Xo Ic visual-silence
-.Op Ic on | off
+.Op Ic on | off | both
 .Xc
 If
 .Ic monitor-silence
-is enabled, prints a message after the interval has expired on a given window.
+is enabled, prints a message after the interval has expired on a given window
+instead of sending a bell.
+If set to both, a bell and a message are produced.
 .It Ic word-separators Ar string
 Sets the session's conception of what characters are considered word
 separators, for the purposes of the next and previous word commands in
@@ -3540,11 +3571,12 @@ The following variables are available, where appropriate:
 .It Li "alternate_on" Ta "" Ta "If pane is in alternate screen"
 .It Li "alternate_saved_x" Ta "" Ta "Saved cursor X in alternate screen"
 .It Li "alternate_saved_y" Ta "" Ta "Saved cursor Y in alternate screen"
+.It Li "buffer_created" Ta "" Ta "Time buffer created"
 .It Li "buffer_name" Ta "" Ta "Name of buffer"
 .It Li "buffer_sample" Ta "" Ta "Sample of start of buffer"
 .It Li "buffer_size" Ta "" Ta "Size of the specified buffer in bytes"
-.It Li "client_activity" Ta "" Ta "Integer time client last had activity"
-.It Li "client_created" Ta "" Ta "Integer time client created"
+.It Li "client_activity" Ta "" Ta "Time client last had activity"
+.It Li "client_created" Ta "" Ta "Time client created"
 .It Li "client_control_mode" Ta "" Ta "1 if client is in control mode"
 .It Li "client_discarded" Ta "" Ta "Bytes discarded when client behind"
 .It Li "client_height" Ta "" Ta "Height of client"
@@ -3588,11 +3620,16 @@ The following variables are available, where appropriate:
 .It Li "mouse_standard_flag" Ta "" Ta "Pane mouse standard flag"
 .It Li "mouse_all_flag" Ta "" Ta "Pane mouse all flag"
 .It Li "pane_active" Ta "" Ta "1 if active pane"
+.It Li "pane_at_bottom" Ta "" Ta "1 if pane is at the bottom of window"
+.It Li "pane_at_left" Ta "" Ta "1 if pane is at the left of window"
+.It Li "pane_at_right" Ta "" Ta "1 if pane is at the right of window"
+.It Li "pane_at_top" Ta "" Ta "1 if pane is at the top of window"
 .It Li "pane_bottom" Ta "" Ta "Bottom of pane"
 .It Li "pane_current_command" Ta "" Ta "Current command if available"
 .It Li "pane_current_path" Ta "" Ta "Current path if available"
 .It Li "pane_dead" Ta "" Ta "1 if pane is dead"
 .It Li "pane_dead_status" Ta "" Ta "Exit status of process in dead pane"
+.It Li "pane_format" Ta "" Ta "1 if format is for a pane (not assuming the current)"
 .It Li "pane_height" Ta "" Ta "Height of pane"
 .It Li "pane_id" Ta "#D" Ta "Unique pane ID"
 .It Li "pane_in_mode" Ta "" Ta "If pane is in a mode"
@@ -3615,11 +3652,13 @@ The following variables are available, where appropriate:
 .It Li "scroll_region_lower" Ta "" Ta "Bottom of scroll region in pane"
 .It Li "scroll_region_upper" Ta "" Ta "Top of scroll region in pane"
 .It Li "scroll_position" Ta "" Ta "Scroll position in copy mode"
+.It Li "selection_present" Ta "" Ta "1 if selection started in copy mode"
 .It Li "session_alerts" Ta "" Ta "List of window indexes with alerts"
 .It Li "session_attached" Ta "" Ta "Number of clients session is attached to"
-.It Li "session_activity" Ta "" Ta "Integer time of session last activity"
-.It Li "session_created" Ta "" Ta "Integer time session created"
-.It Li "session_last_attached" Ta "" Ta "Integer time session last attached"
+.It Li "session_activity" Ta "" Ta "Time of session last activity"
+.It Li "session_created" Ta "" Ta "Time session created"
+.It Li "session_format" Ta "" Ta "1 if format is for a session (not assuming the current)"
+.It Li "session_last_attached" Ta "" Ta "Time session last attached"
 .It Li "session_group" Ta "" Ta "Name of session group"
 .It Li "session_grouped" Ta "" Ta "1 if session in a group"
 .It Li "session_height" Ta "" Ta "Height of session"
@@ -3632,12 +3671,12 @@ The following variables are available, where appropriate:
 .It Li "socket_path" Ta "" Ta "Server socket path"
 .It Li "start_time" Ta "" Ta "Server start time"
 .It Li "version" Ta "" Ta "Server version"
-.It Li "window_activity" Ta "" Ta "Integer time of window last activity"
+.It Li "window_activity" Ta "" Ta "Time of window last activity"
 .It Li "window_activity_flag" Ta "" Ta "1 if window has activity"
 .It Li "window_active" Ta "" Ta "1 if window active"
 .It Li "window_bell_flag" Ta "" Ta "1 if window has bell"
-.It Li "window_find_matches" Ta "" Ta "Matched data from the find-window"
 .It Li "window_flags" Ta "#F" Ta "Window flags"
+.It Li "window_format" Ta "" Ta "1 if format is for a window (not assuming the current)"
 .It Li "window_height" Ta "" Ta "Height of window"
 .It Li "window_id" Ta "" Ta "Unique window ID"
 .It Li "window_index" Ta "#I" Ta "Index of window"
@@ -4000,6 +4039,7 @@ The buffer commands are as follows:
 .Bl -tag -width Ds
 .It Xo
 .Ic choose-buffer
+.Op Fl F Ar format
 .Op Fl f Ar filter
 .Op Fl O Ar sort-order
 .Op Fl t Ar target-pane
@@ -4042,6 +4082,8 @@ or
 .Ql size .
 .Fl f
 specifies an initial filter.
+.Fl F
+specifies the format for each item in the list.
 This command works only if at least one client is attached.
 .It Ic clear-history Op Fl t Ar target-pane
 .D1 (alias: Ic clearhist )

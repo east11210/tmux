@@ -1232,6 +1232,10 @@ void
 format_defaults(struct format_tree *ft, struct client *c, struct session *s,
     struct winlink *wl, struct window_pane *wp)
 {
+	format_add(ft, "session_format", "%d", s != NULL);
+	format_add(ft, "window_format", "%d", wl != NULL);
+	format_add(ft, "pane_format", "%d", wp != NULL);
+
 	if (s == NULL && c != NULL)
 		s = c->session;
 	if (wl == NULL && s != NULL)
@@ -1389,7 +1393,7 @@ format_defaults_pane(struct format_tree *ft, struct window_pane *wp)
 {
 	struct grid	*gd = wp->base.grid;
 	u_int		 idx;
-	int  		 status, scroll_position;
+	int  		 status;
 
 	if (ft->w == NULL)
 		ft->w = wp->window;
@@ -1421,6 +1425,10 @@ format_defaults_pane(struct format_tree *ft, struct window_pane *wp)
 		format_add(ft, "pane_top", "%u", wp->yoff);
 		format_add(ft, "pane_right", "%u", wp->xoff + wp->sx - 1);
 		format_add(ft, "pane_bottom", "%u", wp->yoff + wp->sy - 1);
+		format_add(ft, "pane_at_left", "%d", wp->xoff == 0);
+		format_add(ft, "pane_at_top", "%d", wp->yoff == 0);
+		format_add(ft, "pane_at_right", "%d", wp->xoff + wp->sx == wp->window->sx);
+		format_add(ft, "pane_at_bottom", "%d", wp->yoff + wp->sy == wp->window->sy);
 	}
 
 	format_add(ft, "pane_in_mode", "%d", wp->screen != &wp->base);
@@ -1443,9 +1451,7 @@ format_defaults_pane(struct format_tree *ft, struct window_pane *wp)
 	format_add(ft, "scroll_region_upper", "%u", wp->base.rupper);
 	format_add(ft, "scroll_region_lower", "%u", wp->base.rlower);
 
-	scroll_position = window_copy_scroll_position(wp);
-	if (scroll_position != -1)
-		format_add(ft, "scroll_position", "%d", scroll_position);
+	window_copy_add_formats(wp, ft);
 
 	format_add(ft, "alternate_on", "%d", wp->saved_grid ? 1 : 0);
 	format_add(ft, "alternate_saved_x", "%u", wp->saved_cx);
@@ -1478,12 +1484,17 @@ format_defaults_pane(struct format_tree *ft, struct window_pane *wp)
 void
 format_defaults_paste_buffer(struct format_tree *ft, struct paste_buffer *pb)
 {
-	size_t	 bufsize;
-	char	*s;
+	struct timeval	 tv;
+	size_t		 size;
+	char		*s;
 
-	paste_buffer_data(pb, &bufsize);
-	format_add(ft, "buffer_size", "%zu", bufsize);
+	timerclear(&tv);
+	tv.tv_sec = paste_buffer_created(pb);
+	paste_buffer_data(pb, &size);
+
+	format_add(ft, "buffer_size", "%zu", size);
 	format_add(ft, "buffer_name", "%s", paste_buffer_name(pb));
+	format_add_tv(ft, "buffer_created", &tv);
 
 	s = paste_make_sample(pb);
 	format_add(ft, "buffer_sample", "%s", s);
