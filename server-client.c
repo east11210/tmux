@@ -72,19 +72,18 @@ server_client_callback_identify(__unused int fd, __unused short events,
 
 /* Set identify mode on client. */
 void
-server_client_set_identify(struct client *c)
+server_client_set_identify(struct client *c, u_int delay)
 {
 	struct timeval	tv;
-	int		delay;
 
-	delay = options_get_number(c->session->options, "display-panes-time");
 	tv.tv_sec = delay / 1000;
 	tv.tv_usec = (delay % 1000) * 1000L;
 
 	if (event_initialized(&c->identify_timer))
 		evtimer_del(&c->identify_timer);
 	evtimer_set(&c->identify_timer, server_client_callback_identify, c);
-	evtimer_add(&c->identify_timer, &tv);
+	if (delay != 0)
+		evtimer_add(&c->identify_timer, &tv);
 
 	c->flags |= CLIENT_IDENTIFY;
 	c->tty.flags |= (TTY_FREEZE|TTY_NOCURSOR);
@@ -876,8 +875,8 @@ server_client_handle_key(struct client *c, key_code key)
 		m->valid = 0;
 
 	/* Find affected pane. */
-	if (!KEYC_IS_MOUSE(key) || cmd_find_from_mouse(&fs, m) != 0)
-		cmd_find_from_session(&fs, s);
+	if (!KEYC_IS_MOUSE(key) || cmd_find_from_mouse(&fs, m, 0) != 0)
+		cmd_find_from_session(&fs, s, 0);
 	wp = fs.wp;
 
 	/* Forward mouse keys if disabled. */
@@ -1068,7 +1067,7 @@ server_client_resize_force(struct window_pane *wp)
 	memset(&ws, 0, sizeof ws);
 	ws.ws_col = wp->sx;
 	ws.ws_row = wp->sy - 1;
-	if (ioctl(wp->fd, TIOCSWINSZ, &ws) == -1)
+	if (wp->fd != -1 && ioctl(wp->fd, TIOCSWINSZ, &ws) == -1)
 #ifdef __sun
 		if (errno != EINVAL && errno != ENXIO)
 #endif
@@ -1097,7 +1096,7 @@ server_client_resize_event(__unused int fd, __unused short events, void *data)
 	memset(&ws, 0, sizeof ws);
 	ws.ws_col = wp->sx;
 	ws.ws_row = wp->sy;
-	if (ioctl(wp->fd, TIOCSWINSZ, &ws) == -1)
+	if (wp->fd != -1 && ioctl(wp->fd, TIOCSWINSZ, &ws) == -1)
 #ifdef __sun
 		/*
 		 * Some versions of Solaris apparently can return an error when
@@ -1212,7 +1211,7 @@ server_client_reset_state(struct client *c)
 	struct window_pane	*wp = w->active, *loop;
 	struct screen		*s = wp->screen;
 	struct options		*oo = c->session->options;
-	int			 status, mode, o;
+	int			 lines, mode;
 
 	if (c->flags & (CLIENT_CONTROL|CLIENT_SUSPENDED))
 		return;
@@ -1220,13 +1219,14 @@ server_client_reset_state(struct client *c)
 	tty_region_off(&c->tty);
 	tty_margin_off(&c->tty);
 
-	status = options_get_number(oo, "status");
-	if (!window_pane_visible(wp) || wp->yoff + s->cy >= c->tty.sy - status)
+	if (status_at_line(c) != 0)
+		lines = 0;
+	else
+		lines = status_line_size(c->session);
+	if (!window_pane_visible(wp) || wp->yoff + s->cy >= c->tty.sy - lines)
 		tty_cursor(&c->tty, 0, 0);
-	else {
-		o = status && options_get_number(oo, "status-position") == 0;
-		tty_cursor(&c->tty, wp->xoff + s->cx, o + wp->yoff + s->cy);
-	}
+	else
+		tty_cursor(&c->tty, wp->xoff + s->cx, lines + wp->yoff + s->cy);
 
 	/*
 	 * Set mouse mode if requested. To support dragging, always use button

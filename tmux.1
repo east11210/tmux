@@ -206,11 +206,6 @@ and
 files in the current directory, where
 .Em PID
 is the PID of the server or client process.
-.It Fl V
-Report the
-.Nm
-version.
-.Pp
 If
 .Fl v
 is specified twice, an additional
@@ -226,6 +221,11 @@ signal may be sent to the
 server process to toggle logging between on (as if
 .Fl v
 was given) and off.
+.It Fl V
+Report the
+.Nm
+version.
+.Pp
 .It Ar command Op Ar flags
 This specifies one of a set of commands used to control
 .Nm ,
@@ -980,22 +980,37 @@ them with
 and
 .Em %endif
 lines.
+Additional
+.Em %elif
+and
+.Em %else
+lines may also be used.
 The argument to
 .Em %if
-is expanded as a format and if it evaluates to false
-(zero or empty), subsequent lines are ignored until
+and
+.Em %elif
+is expanded as a format and if it evaluates to false (zero or empty),
+subsequent lines are ignored until the next
+.Em %elif ,
+.Em %else
+or
 .Em %endif .
 For example:
 .Bd -literal -offset indent
 %if #{==:#{host},myhost}
 set -g status-style bg=red
+%elif #{==:#{host},myotherhost}
+set -g status-style bg=green
+%else
+set -g status-style bg=blue
 %endif
 .Ed
 .Pp
 Will change the status line to red if running on
-.Ql myhost .
-.Em %if
-may not be nested.
+.Ql myhost ,
+green if running on
+.Ql myotherhost ,
+or blue if running on another host.
 .It Ic start-server
 .D1 (alias: Ic start )
 Start the
@@ -1358,6 +1373,7 @@ the end of the visible pane.
 The default is to capture only the visible contents of the pane.
 .It Xo
 .Ic choose-client
+.Op Fl N
 .Op Fl F Ar format
 .Op Fl f Ar filter
 .Op Fl O Ar sort-order
@@ -1385,6 +1401,7 @@ The following keys may be used in client mode:
 .It Li "Z" Ta "Suspend tagged clients"
 .It Li "f" Ta "Enter a format to filter items"
 .It Li "O" Ta "Change sort order"
+.It Li "v" Ta "Toggle preview"
 .It Li "q" Ta "Exit mode"
 .El
 .Pp
@@ -1405,13 +1422,17 @@ specifies the initial sort order: one of
 or
 .Ql activity .
 .Fl f
-specifies an initial filter.
+specifies an initial filter: the filter is a format - if it evaluates to zero,
+the item in the list is not shown, otherwise it is shown.
+If a filter would lead to an empty list, it is ignored.
 .Fl F
 specifies the format for each item in the list.
+.Fl N
+starts without the preview.
 This command works only if at least one client is attached.
 .It Xo
 .Ic choose-tree
-.Op Fl sw
+.Op Fl Nsw
 .Op Fl F Ar format
 .Op Fl f Ar filter
 .Op Fl O Ar sort-order
@@ -1440,6 +1461,7 @@ The following keys may be used in tree mode:
 .It Li "\&:" Ta "Run a command for each tagged item"
 .It Li "f" Ta "Enter a format to filter items"
 .It Li "O" Ta "Change sort order"
+.It Li "v" Ta "Toggle preview"
 .It Li "q" Ta "Exit mode"
 .El
 .Pp
@@ -1459,12 +1481,17 @@ specifies the initial sort order: one of
 or
 .Ql time .
 .Fl f
-specifies an initial filter.
+specifies an initial filter: the filter is a format - if it evaluates to zero,
+the item in the list is not shown, otherwise it is shown.
+If a filter would lead to an empty list, it is ignored.
 .Fl F
 specifies the format for each item in the tree.
+.Fl N
+starts without the preview.
 This command works only if at least one client is attached.
 .It Xo
 .Ic display-panes
+.Op Fl d Ar duration
 .Op Fl t Ar target-client
 .Op Ar template
 .Xc
@@ -1472,11 +1499,19 @@ This command works only if at least one client is attached.
 Display a visible indicator of each pane shown by
 .Ar target-client .
 See the
-.Ic display-panes-time ,
-.Ic display-panes-colour ,
+.Ic display-panes-colour
 and
 .Ic display-panes-active-colour
 session options.
+The indicator is closed when a key is pressed or
+.Ar duration
+milliseconds have passed.
+If
+.Fl d
+is not given,
+.Ic display-panes-time
+is used.
+A duration of zero means the indicator stays until a key is pressed.
 While the indicator is on screen, a pane may be chosen with the
 .Ql 0
 to
@@ -1911,6 +1946,7 @@ applies the last set layout if possible (undoes the most recent layout change).
 .It Xo Ic select-pane
 .Op Fl DdegLlMmRU
 .Op Fl P Ar style
+.Op Fl T Ar title
 .Op Fl t Ar target-pane
 .Xc
 .D1 (alias: Ic selectp )
@@ -1966,6 +2002,9 @@ select-pane -t:.1 -P 'bg=red'
 .Pp
 .Fl g
 shows the current pane style.
+.Pp
+.Fl T
+sets the pane title.
 .It Xo Ic select-window
 .Op Fl lnpT
 .Op Fl t Ar target-window
@@ -2558,7 +2597,9 @@ The default is zero.
 .It Xo Ic bell-action
 .Op Ic any | none | current | other
 .Xc
-Set action on window bell.
+Set action on a bell in a window when
+.Ic monitor-bell
+is on.
 The values are the same as those for
 .Ic activity-action .
 .It Ic default-command Ar shell-command
@@ -2860,7 +2901,7 @@ Set the position of the status line.
 Display
 .Ar string
 to the right of the status line.
-By default, the current window title in double quotes, the date and the time
+By default, the current pane title in double quotes, the date and the time
 are shown.
 As with
 .Ic status-left ,
@@ -2905,7 +2946,7 @@ and so on.
 .Pp
 For example:
 .Bd -literal -offset indent
-set -s user-keys[0] '\e[5;30012~'
+set -s user-keys[0] "\ee[5;30012~"
 bind User0 resize-pane -L 3
 .Ed
 .It Xo Ic visual-activity
@@ -2919,7 +2960,9 @@ If set to both, a bell and a message are produced.
 .It Xo Ic visual-bell
 .Op Ic on | off | both
 .Xc
-If on, a message is shown on a bell instead of it being passed through to the
+If on, a message is shown on a bell in a window for which the
+.Ic monitor-bell
+window option is enabled instead of it being passed through to the
 terminal (which normally makes a sound).
 If set to both, a bell and a message are produced.
 Also see the
@@ -2980,7 +3023,7 @@ and poor for interactive programs such as shells.
 .Xc
 Allow programs to change the window name using a terminal escape
 sequence (\eek...\ee\e\e).
-The default is on.
+The default is off.
 .Pp
 .It Xo Ic alternate-screen
 .Op Ic on | off
@@ -3076,6 +3119,12 @@ option.
 .Xc
 Monitor for activity in the window.
 Windows with activity are highlighted in the status line.
+.Pp
+.It Xo Ic monitor-bell
+.Op Ic on | off
+.Xc
+Monitor for a bell in the window.
+Windows with a bell are highlighted in the status line.
 .Pp
 .It Xo Ic monitor-silence
 .Op Ic interval
@@ -3302,7 +3351,11 @@ layout after every
 set-hook after-split-window "selectl even-vertical"
 .Ed
 .Pp
-In addition, the following hooks are available:
+All the notifications listed in the
+.Sx CONTROL MODE
+section are hooks (without any arguments), except
+.Ic %exit .
+The following additional hooks are available:
 .Bl -tag -width "XXXXXXXXXXXXXXXXXXXXXX"
 .It alert-activity
 Run when a window has activity.
@@ -3310,6 +3363,8 @@ See
 .Ic monitor-activity .
 .It alert-bell
 Run when a window has received a bell.
+See
+.Ic monitor-bell .
 .It alert-silence
 Run when a window has been silent.
 See
@@ -3602,7 +3657,7 @@ The following variables are available, where appropriate:
 .It Li "cursor_y" Ta "" Ta "Cursor Y position in pane"
 .It Li "history_bytes" Ta "" Ta "Number of bytes in window history"
 .It Li "history_limit" Ta "" Ta "Maximum window history lines"
-.It Li "history_size" Ta "" Ta "Size of history in bytes"
+.It Li "history_size" Ta "" Ta "Size of history in lines"
 .It Li "hook" Ta "" Ta "Name of running hook, if any"
 .It Li "hook_pane" Ta "" Ta "ID of pane where hook was run, if any"
 .It Li "hook_session" Ta "" Ta "ID of session where hook was run, if any"
@@ -3700,14 +3755,11 @@ and are displayed in the status line and various lists: the name is the
 .Nm
 identifier for a window or session.
 Only panes have titles.
-A pane's title is typically set by the program running inside the pane and
-is not modified by
-.Nm .
-It is the same mechanism used to set for example the
+A pane's title is typically set by the program running inside the pane using
+an escape sequence (like it would set the
 .Xr xterm 1
-window title in an
-.Xr X 7
-window manager.
+window title in
+.Xr X 7 ) .
 Windows themselves do not have titles - a window's title is the title of its
 active pane.
 .Nm
@@ -3748,6 +3800,11 @@ A pane's title can be set via the OSC title setting sequence, for example:
 .Bd -literal -offset indent
 $ printf '\e033]2;My Title\e033\e\e'
 .Ed
+.Pp
+It can also be modified with the
+.Ic select-pane
+.Fl T
+command.
 .Sh ENVIRONMENT
 When the server is started,
 .Nm
@@ -3842,8 +3899,8 @@ The flag is one of the following symbols appended to the window name:
 .It Sy "Symbol" Ta Sy "Meaning"
 .It Li "*" Ta "Denotes the current window."
 .It Li "-" Ta "Marks the last window (previously selected)."
-.It Li "#" Ta "Window is monitored and activity has been detected."
-.It Li "\&!" Ta "A bell has occurred in the window."
+.It Li "#" Ta "Window activity is monitored and activity has been detected."
+.It Li "\&!" Ta "Window bells are monitored and a bell has occurred in the window."
 .It Li "~" Ta "The window has been silent for the monitor-silence interval."
 .It Li "M" Ta "The window contains the marked pane."
 .It Li "Z" Ta "The window's active pane is zoomed."
@@ -4039,6 +4096,7 @@ The buffer commands are as follows:
 .Bl -tag -width Ds
 .It Xo
 .Ic choose-buffer
+.Op Fl N
 .Op Fl F Ar format
 .Op Fl f Ar filter
 .Op Fl O Ar sort-order
@@ -4050,7 +4108,7 @@ a list.
 The following keys may be used in buffer mode:
 .Bl -column "Key" "Function" -offset indent
 .It Sy "Key" Ta Sy "Function"
-.It Li "Enter" Ta "Choose selected buffer"
+.It Li "Enter" Ta "Paste selected buffer"
 .It Li "Up" Ta "Select previous buffer"
 .It Li "Down" Ta "Select next buffer"
 .It Li "C-s" Ta "Search by name or content"
@@ -4058,10 +4116,13 @@ The following keys may be used in buffer mode:
 .It Li "t" Ta "Toggle if buffer is tagged"
 .It Li "T" Ta "Tag no buffers"
 .It Li "C-t" Ta "Tag all buffers"
+.It Li "p" Ta "Paste selected buffer"
+.It Li "P" Ta "Paste tagged buffers"
 .It Li "d" Ta "Delete selected buffer"
 .It Li "D" Ta "Delete tagged buffers"
 .It Li "f" Ta "Enter a format to filter items"
 .It Li "O" Ta "Change sort order"
+.It Li "v" Ta "Toggle preview"
 .It Li "q" Ta "Exit mode"
 .El
 .Pp
@@ -4081,9 +4142,13 @@ specifies the initial sort order: one of
 or
 .Ql size .
 .Fl f
-specifies an initial filter.
+specifies an initial filter: the filter is a format - if it evaluates to zero,
+the item in the list is not shown, otherwise it is shown.
+If a filter would lead to an empty list, it is ignored.
 .Fl F
 specifies the format for each item in the list.
+.Fl N
+starts without the preview.
 This command works only if at least one client is attached.
 .It Ic clear-history Op Fl t Ar target-pane
 .D1 (alias: Ic clearhist )

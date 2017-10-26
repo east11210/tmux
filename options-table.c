@@ -149,7 +149,7 @@ const struct options_table_entry options_table[] = {
 	  .type = OPTIONS_TABLE_CHOICE,
 	  .scope = OPTIONS_TABLE_SESSION,
 	  .choices = options_table_bell_action_list,
-	  .default_num = BELL_OTHER
+	  .default_num = ALERT_OTHER
 	},
 
 	{ .name = "assume-paste-time",
@@ -172,7 +172,7 @@ const struct options_table_entry options_table[] = {
 	  .type = OPTIONS_TABLE_CHOICE,
 	  .scope = OPTIONS_TABLE_SESSION,
 	  .choices = options_table_bell_action_list,
-	  .default_num = BELL_ANY
+	  .default_num = ALERT_ANY
 	},
 
 	{ .name = "default-command",
@@ -357,7 +357,7 @@ const struct options_table_entry options_table[] = {
 	  .type = OPTIONS_TABLE_CHOICE,
 	  .scope = OPTIONS_TABLE_SESSION,
 	  .choices = options_table_bell_action_list,
-	  .default_num = BELL_OTHER
+	  .default_num = ALERT_OTHER
 	},
 
 	{ .name = "status",
@@ -547,7 +547,7 @@ const struct options_table_entry options_table[] = {
 	{ .name = "allow-rename",
 	  .type = OPTIONS_TABLE_FLAG,
 	  .scope = OPTIONS_TABLE_WINDOW,
-	  .default_num = 1
+	  .default_num = 0
 	},
 
 	{ .name = "alternate-screen",
@@ -652,6 +652,12 @@ const struct options_table_entry options_table[] = {
 	  .type = OPTIONS_TABLE_FLAG,
 	  .scope = OPTIONS_TABLE_WINDOW,
 	  .default_num = 0
+	},
+
+	{ .name = "monitor-bell",
+	  .type = OPTIONS_TABLE_FLAG,
+	  .scope = OPTIONS_TABLE_WINDOW,
+	  .default_num = 1
 	},
 
 	{ .name = "monitor-silence",

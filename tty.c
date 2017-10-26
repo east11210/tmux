@@ -159,8 +159,9 @@ tty_read_callback(__unused int fd, __unused short events, void *data)
 	int		 nread;
 
 	nread = evbuffer_read(tty->in, tty->fd, -1);
-	if (nread == -1) {
+	if (nread == 0 || nread == -1) {
 		event_del(&tty->event_in);
+		server_client_lost(tty->client);
 		return;
 	}
 	log_debug("%s: read %d bytes (already %zu)", c->name, nread, size);
@@ -1037,7 +1038,7 @@ tty_write(void (*cmdfn)(struct tty *, const struct tty_ctx *),
 		ctx->xoff = wp->xoff;
 		ctx->yoff = wp->yoff;
 		if (status_at_line(c) == 0)
-			ctx->yoff++;
+			ctx->yoff += status_line_size(c->session);
 
 		cmdfn(&c->tty, ctx);
 	}
@@ -1609,7 +1610,8 @@ tty_cursor(struct tty *tty, u_int cx, u_int cy)
 	}
 
 	/* Zero on the next line. */
-	if (cx == 0 && cy == thisy + 1 && thisy != tty->rlower) {
+	if (cx == 0 && cy == thisy + 1 && thisy != tty->rlower &&
+	    (!tty_use_margin(tty) || tty->rleft == 0)) {
 		tty_putc(tty, '\r');
 		tty_putc(tty, '\n');
 		goto out;
@@ -1622,7 +1624,7 @@ tty_cursor(struct tty *tty, u_int cx, u_int cy)
 		 */
 
 		/* To left edge. */
-		if (cx == 0) {
+		if (cx == 0 && (!tty_use_margin(tty) || tty->rleft == 0)) {
 			tty_putc(tty, '\r');
 			goto out;
 		}

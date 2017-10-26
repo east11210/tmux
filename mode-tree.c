@@ -60,6 +60,7 @@ struct mode_tree_data {
 
 	struct screen		  screen;
 
+	int			  preview;
 	char			 *search;
 	char			 *filter;
 };
@@ -127,6 +128,17 @@ mode_tree_free_items(struct mode_tree_list *mtl)
 }
 
 static void
+mode_tree_check_selected(struct mode_tree_data *mtd)
+{
+	/*
+	 * If the current line would now be off screen reset the offset to the
+	 * last visible line.
+	 */
+	if (mtd->current > mtd->height - 1)
+		mtd->offset = mtd->current - mtd->height + 1;
+}
+
+static void
 mode_tree_clear_lines(struct mode_tree_data *mtd)
 {
 	free(mtd->line_list);
@@ -191,7 +203,7 @@ mode_tree_set_current(struct mode_tree_data *mtd, uint64_t tag)
 	if (i != mtd->line_size) {
 		mtd->current = i;
 		if (mtd->current > mtd->height - 1)
-			mtd->offset = 1 + mtd->current - mtd->height;
+			mtd->offset = mtd->current - mtd->height + 1;
 		else
 			mtd->offset = 0;
 	} else {
@@ -254,7 +266,7 @@ mode_tree_count_tagged(struct mode_tree_data *mtd)
 
 void
 mode_tree_each_tagged(struct mode_tree_data *mtd, void (*cb)(void *, void *,
-    key_code), key_code key, int current)
+    struct client *, key_code), struct client *c, key_code key, int current)
 {
 	struct mode_tree_item	*mti;
 	u_int			 i;
@@ -265,12 +277,12 @@ mode_tree_each_tagged(struct mode_tree_data *mtd, void (*cb)(void *, void *,
 		mti = mtd->line_list[i].item;
 		if (mti->tagged) {
 			fired = 1;
-			cb(mtd->modedata, mti->itemdata, key);
+			cb(mtd->modedata, mti->itemdata, c, key);
 		}
 	}
 	if (!fired && current) {
 		mti = mtd->line_list[mtd->current].item;
-		cb(mtd->modedata, mti->itemdata, key);
+		cb(mtd->modedata, mti->itemdata, c, key);
 	}
 }
 
@@ -294,6 +306,8 @@ mode_tree_start(struct window_pane *wp, struct args *args,
 	mtd->sort_list = sort_list;
 	mtd->sort_size = sort_size;
 	mtd->sort_type = 0;
+
+	mtd->preview = !args_has(args, 'N');
 
 	sort = args_get(args, 'O');
 	if (sort != NULL) {
@@ -348,13 +362,17 @@ mode_tree_build(struct mode_tree_data *mtd)
 	mode_tree_set_current(mtd, tag);
 
 	mtd->width = screen_size_x(s);
-	mtd->height = (screen_size_y(s) / 3) * 2;
-	if (mtd->height > mtd->line_size)
-		mtd->height = screen_size_y(s) / 2;
-	if (mtd->height < 10)
+	if (mtd->preview) {
+		mtd->height = (screen_size_y(s) / 3) * 2;
+		if (mtd->height > mtd->line_size)
+			mtd->height = screen_size_y(s) / 2;
+		if (mtd->height < 10)
+			mtd->height = screen_size_y(s);
+		if (screen_size_y(s) - mtd->height < 2)
+			mtd->height = screen_size_y(s);
+	} else
 		mtd->height = screen_size_y(s);
-	if (screen_size_y(s) - mtd->height < 2)
-		mtd->height = screen_size_y(s);
+	mode_tree_check_selected(mtd);
 }
 
 static void
@@ -536,10 +554,12 @@ mode_tree_draw(struct mode_tree_data *mtd)
 		}
 
 		if (i != mtd->current) {
-			screen_write_puts(&ctx, &gc0, "%.*s", w, text);
+			screen_write_nputs(&ctx, w, &gc0, "%s", text);
 			screen_write_clearendofline(&ctx, 8);
-		} else
-			screen_write_puts(&ctx, &gc, "%-*.*s", w, w, text);
+		} else {
+			screen_write_nputs(&ctx, w, &gc, "%s", text);
+			screen_write_clearendofline(&ctx, gc.bg);
+		}
 		free(text);
 
 		if (mti->tagged) {
@@ -549,7 +569,7 @@ mode_tree_draw(struct mode_tree_data *mtd)
 	}
 
 	sy = screen_size_y(s);
-	if (sy <= 4 || h <= 4 || sy - h <= 4 || w <= 4) {
+	if (!mtd->preview || sy <= 4 || h <= 4 || sy - h <= 4 || w <= 4) {
 		screen_write_stop(&ctx);
 		return;
 	}
@@ -756,11 +776,13 @@ mode_tree_key(struct mode_tree_data *mtd, struct client *c, key_code *key,
 	case KEYC_UP:
 	case 'k':
 	case KEYC_WHEELUP_PANE:
+	case '\020': /* C-p */
 		mode_tree_up(mtd, 1);
 		break;
 	case KEYC_DOWN:
 	case 'j':
 	case KEYC_WHEELDOWN_PANE:
+	case '\016': /* C-n */
 		mode_tree_down(mtd, 1);
 		break;
 	case KEYC_PPAGE:
@@ -786,7 +808,7 @@ mode_tree_key(struct mode_tree_data *mtd, struct client *c, key_code *key,
 	case KEYC_END:
 		mtd->current = mtd->line_size - 1;
 		if (mtd->current > mtd->height - 1)
-			mtd->offset = mtd->current - mtd->height;
+			mtd->offset = mtd->current - mtd->height + 1;
 		else
 			mtd->offset = 0;
 		break;
@@ -826,6 +848,7 @@ mode_tree_key(struct mode_tree_data *mtd, struct client *c, key_code *key,
 		mode_tree_build(mtd);
 		break;
 	case KEYC_LEFT:
+	case 'h':
 	case '-':
 		if (line->flat || !current->expanded)
 			current = current->parent;
@@ -838,6 +861,7 @@ mode_tree_key(struct mode_tree_data *mtd, struct client *c, key_code *key,
 		}
 		break;
 	case KEYC_RIGHT:
+	case 'l':
 	case '+':
 		if (line->flat || current->expanded)
 			mode_tree_down(mtd, 0);
@@ -860,6 +884,12 @@ mode_tree_key(struct mode_tree_data *mtd, struct client *c, key_code *key,
 		status_prompt_set(c, "(filter) ", mtd->filter,
 		    mode_tree_filter_callback, mode_tree_filter_free, mtd,
 		    PROMPT_NOFORMAT);
+		break;
+	case 'v':
+		mtd->preview = !mtd->preview;
+		mode_tree_build(mtd);
+		if (mtd->preview)
+			mode_tree_check_selected(mtd);
 		break;
 	}
 	return (0);

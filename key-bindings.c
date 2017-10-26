@@ -138,11 +138,16 @@ void
 key_bindings_remove_table(const char *name)
 {
 	struct key_table	*table;
+	struct client		*c;
 
 	table = key_bindings_get_table(name, 0);
 	if (table != NULL) {
 		RB_REMOVE(key_tables, &key_tables, table);
 		key_bindings_unref_table(table);
+	}
+	TAILQ_FOREACH(c, &clients, entry) {
+		if (c->keytable == table)
+			server_client_set_key_table(c, NULL);
 	}
 }
 
@@ -157,13 +162,13 @@ key_bindings_init(void)
 		"bind ! break-pane",
 		"bind '\"' split-window",
 		"bind '#' list-buffers",
-		"bind '$' command-prompt -I'#S' \"rename-session '%%'\"",
+		"bind '$' command-prompt -I'#S' \"rename-session -- '%%'\"",
 		"bind % split-window -h",
 		"bind & confirm-before -p\"kill-window #W? (y/n)\" kill-window",
 		"bind \"'\" command-prompt -pindex \"select-window -t ':%%'\"",
 		"bind ( switch-client -p",
 		"bind ) switch-client -n",
-		"bind , command-prompt -I'#W' \"rename-window '%%'\"",
+		"bind , command-prompt -I'#W' \"rename-window -- '%%'\"",
 		"bind - delete-buffer",
 		"bind . command-prompt \"move-window -t '%%'\"",
 		"bind 0 select-window -t:=0",
@@ -187,7 +192,7 @@ key_bindings_init(void)
 		"bind ] paste-buffer",
 		"bind c new-window",
 		"bind d detach-client",
-		"bind f command-prompt \"find-window '%%'\"",
+		"bind f command-prompt \"find-window -- '%%'\"",
 		"bind i display-message",
 		"bind l last-window",
 		"bind m select-pane -m",

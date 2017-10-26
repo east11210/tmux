@@ -81,11 +81,11 @@ struct tmuxproc;
 #define nitems(_a) (sizeof((_a)) / sizeof((_a)[0]))
 #endif
 
-/* Bell option values. */
-#define BELL_NONE 0
-#define BELL_ANY 1
-#define BELL_CURRENT 2
-#define BELL_OTHER 3
+/* Alert option values. */
+#define ALERT_NONE 0
+#define ALERT_ANY 1
+#define ALERT_CURRENT 2
+#define ALERT_OTHER 3
 
 /* Visual option values. */
 #define VISUAL_OFF 0
@@ -365,6 +365,7 @@ enum tty_code_code {
 	TTYC_KIC6,
 	TTYC_KIC7,
 	TTYC_KICH1,
+	TTYC_KIND,
 	TTYC_KLFT2,
 	TTYC_KLFT3,
 	TTYC_KLFT4,
@@ -386,6 +387,7 @@ enum tty_code_code {
 	TTYC_KPRV5,
 	TTYC_KPRV6,
 	TTYC_KPRV7,
+	TTYC_KRI,
 	TTYC_KRIT2,
 	TTYC_KRIT3,
 	TTYC_KRIT4,
@@ -662,8 +664,10 @@ struct screen_sel {
 };
 
 /* Virtual screen. */
+struct screen_titles;
 struct screen {
 	char			*title;
+	struct screen_titles	*titles;
 
 	struct grid		*grid;		/* grid data */
 
@@ -778,6 +782,8 @@ struct window_pane {
 #define PANE_INPUTOFF 0x40
 #define PANE_CHANGED 0x80
 #define PANE_EXITED 0x100
+#define PANE_STATUSREADY 0x200
+#define PANE_STATUSDRAWN 0x400
 
 	int		 argc;
 	char	       **argv;
@@ -1379,6 +1385,7 @@ struct client {
 #define CLIENT_DOUBLECLICK 0x100000
 #define CLIENT_TRIPLECLICK 0x200000
 #define CLIENT_SIZECHANGED 0x400000
+#define CLIENT_STATUSOFF 0x800000
 	int		 flags;
 	struct key_table *keytable;
 
@@ -1770,20 +1777,22 @@ void		 cmd_find_copy_state(struct cmd_find_state *,
 		     struct cmd_find_state *);
 void		 cmd_find_log_state(const char *, struct cmd_find_state *);
 void		 cmd_find_from_session(struct cmd_find_state *,
-		     struct session *);
+		     struct session *, int);
 void		 cmd_find_from_winlink(struct cmd_find_state *,
-		     struct winlink *);
+		     struct winlink *, int);
 int		 cmd_find_from_session_window(struct cmd_find_state *,
-		     struct session *, struct window *);
-int		 cmd_find_from_window(struct cmd_find_state *, struct window *);
+		     struct session *, struct window *, int);
+int		 cmd_find_from_window(struct cmd_find_state *, struct window *,
+		     int);
 void		 cmd_find_from_winlink_pane(struct cmd_find_state *,
-		     struct winlink *, struct window_pane *);
+		     struct winlink *, struct window_pane *, int);
 int		 cmd_find_from_pane(struct cmd_find_state *,
-		     struct window_pane *);
-int		 cmd_find_from_client(struct cmd_find_state *, struct client *);
+		     struct window_pane *, int);
+int		 cmd_find_from_client(struct cmd_find_state *, struct client *,
+		     int);
 int		 cmd_find_from_mouse(struct cmd_find_state *,
-		     struct mouse_event *);
-int		 cmd_find_from_nothing(struct cmd_find_state *);
+		     struct mouse_event *, int);
+int		 cmd_find_from_nothing(struct cmd_find_state *, int);
 
 /* cmd.c */
 int		 cmd_pack_argv(int, char **, char *, size_t);
@@ -1874,7 +1883,7 @@ void	 server_add_accept(int);
 
 /* server-client.c */
 u_int	 server_client_how_many(void);
-void	 server_client_set_identify(struct client *);
+void	 server_client_set_identify(struct client *, u_int);
 void	 server_client_clear_identify(struct client *, struct window_pane *);
 void	 server_client_set_key_table(struct client *, const char *);
 const char *server_client_get_key_table(struct client *);
@@ -1924,6 +1933,7 @@ void	 status_timer_start(struct client *);
 void	 status_timer_start_all(void);
 void	 status_update_saved(struct session *s);
 int	 status_at_line(struct client *);
+u_int	 status_line_size(struct session *);
 struct window *status_get_window_at(struct client *, u_int);
 int	 status_redraw(struct client *);
 void printflike(2, 3) status_message_set(struct client *, const char *, ...);
@@ -1973,7 +1983,7 @@ int	 grid_cells_equal(const struct grid_cell *, const struct grid_cell *);
 struct grid *grid_create(u_int, u_int, u_int);
 void	 grid_destroy(struct grid *);
 int	 grid_compare(struct grid *, struct grid *);
-void	 grid_collect_history(struct grid *, u_int);
+void	 grid_collect_history(struct grid *);
 void	 grid_scroll_history(struct grid *, u_int);
 void	 grid_scroll_history_region(struct grid *, u_int, u_int, u_int);
 void	 grid_clear_history(struct grid *);
@@ -2082,6 +2092,8 @@ void	 screen_reset_tabs(struct screen *);
 void	 screen_set_cursor_style(struct screen *, u_int);
 void	 screen_set_cursor_colour(struct screen *, const char *);
 void	 screen_set_title(struct screen *, const char *);
+void	 screen_push_title(struct screen *);
+void	 screen_pop_title(struct screen *);
 void	 screen_resize(struct screen *, u_int, u_int, int);
 void	 screen_set_selection(struct screen *,
 	     u_int, u_int, u_int, u_int, u_int, struct grid_cell *);
@@ -2164,7 +2176,6 @@ int		 window_pane_set_mode(struct window_pane *,
 void		 window_pane_reset_mode(struct window_pane *);
 void		 window_pane_key(struct window_pane *, struct client *,
 		     struct session *, key_code, struct mouse_event *);
-int		 window_pane_outside(struct window_pane *);
 int		 window_pane_visible(struct window_pane *);
 u_int		 window_pane_search(struct window_pane *, const char *);
 const char	*window_printable_flags(struct winlink *);
@@ -2219,7 +2230,7 @@ u_int		 layout_set_previous(struct window *);
 u_int	 mode_tree_count_tagged(struct mode_tree_data *);
 void	*mode_tree_get_current(struct mode_tree_data *);
 void	 mode_tree_each_tagged(struct mode_tree_data *, void (*)(void *, void *,
-	     key_code), key_code, int);
+	     struct client *, key_code), struct client *, key_code, int);
 void	 mode_tree_up(struct mode_tree_data *, int);
 void	 mode_tree_down(struct mode_tree_data *, int);
 struct mode_tree_data *mode_tree_start(struct window_pane *, struct args *,
